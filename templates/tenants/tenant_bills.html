@@ -16,7 +16,8 @@
   </div>
   {% else %}
   {% for bill in all_bills %}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+  <a href="{% url 'tenant:bill_detail' bill.pk %}"
+     class="block bg-white rounded-2xl shadow-sm border border-slate-100 p-4 hover:border-primary/30 transition-colors">
     <div class="flex items-center justify-between mb-2">
       <div>
         <p class="font-semibold text-sm">{{ bill.month|date:"F Y" }}</p>
@@ -48,9 +49,14 @@
       <span class="text-xs text-slate-400">
         {% if bill.due_date %}<i class="fa-regular fa-calendar mr-1"></i>{% trans "Due" %}: {{ bill.due_date|date:"d M Y" }}{% endif %}
       </span>
-      <span class="font-bold text-primary">฿{{ bill.total|floatformat:0 }}</span>
+      <div class="flex items-center gap-2">
+        <span class="font-bold text-primary">฿{{ bill.total|floatformat:0 }}</span>
+        {% if bill.status == 'sent' or bill.status == 'overdue' %}
+        <span class="text-xs bg-primary text-white px-2 py-0.5 rounded-full font-medium">{% trans "Pay" %}</span>
+        {% endif %}
+      </div>
     </div>
-  </div>
+  </a>
   {% endfor %}
   {% endif %}
 </div>

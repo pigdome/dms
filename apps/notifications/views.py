@@ -89,13 +89,18 @@ class ParcelListView(View):
 
 @method_decorator([login_required, staff_required], name='dispatch')
 class BroadcastCreateView(View):
+    def _audience_context(self, dorm):
+        from apps.rooms.models import Building, Floor
+        buildings = Building.objects.filter(dormitory=dorm) if dorm else []
+        floors = Floor.objects.filter(building__dormitory=dorm).select_related('building') if dorm else []
+        return {'buildings': buildings, 'floors': floors}
+
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         recent_broadcasts = Broadcast.objects.filter(dormitory=dorm)[:5] if dorm else []
-        return render(request, 'notifications/broadcast.html', {
-            'form': _SimpleForm({}),
-            'recent_broadcasts': recent_broadcasts,
-        })
+        ctx = self._audience_context(dorm)
+        ctx.update({'form': _SimpleForm({}), 'recent_broadcasts': recent_broadcasts})
+        return render(request, 'notifications/broadcast.html', ctx)
 
     def post(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
@@ -107,10 +112,12 @@ class BroadcastCreateView(View):
 
         if not title or not body:
             messages.error(request, _('Title and body are required.'))
-            return render(request, 'notifications/broadcast.html', {
+            ctx = self._audience_context(dorm)
+            ctx.update({
                 'form': _SimpleForm(data),
                 'recent_broadcasts': Broadcast.objects.filter(dormitory=dorm)[:5] if dorm else [],
             })
+            return render(request, 'notifications/broadcast.html', ctx)
 
         if not dorm:
             messages.error(request, _('No dormitory associated with your account.'))
@@ -129,7 +136,17 @@ class BroadcastCreateView(View):
             bc.attachment = request.FILES['attachment']
         bc.save()
 
-        messages.success(request, _('Broadcast sent successfully.'))
+        # Send LINE push messages
+        try:
+            from apps.notifications.line import push_broadcast
+            sent = push_broadcast(bc)
+            if sent:
+                messages.success(request, _('Broadcast sent to %(n)s LINE users.') % {'n': sent})
+            else:
+                messages.success(request, _('Broadcast saved. No LINE IDs configured for target audience.'))
+        except Exception:
+            messages.success(request, _('Broadcast saved (LINE delivery failed).'))
+
         return redirect('notifications:broadcast')
 
 

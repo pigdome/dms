@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Bill" %} {{ bill.invoice_number }} - DMS{% endblock %}
+{% block nav_billing %}text-primary{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+
+  <!-- Header -->
+  <div class="flex items-center gap-3">
+    <a href="{% url 'billing:list' %}" class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 shadow-sm text-slate-600 hover:text-primary">
+      <i class="fa-solid fa-arrow-left text-sm"></i>
+    </a>
+    <h2 class="font-bold text-lg flex-1">{% trans "Bill Detail" %}</h2>
+    <span class="text-xs px-2.5 py-1 rounded-full font-semibold
+      {% if bill.status == 'paid' %}bg-emerald-100 text-emerald-700
+      {% elif bill.status == 'overdue' %}bg-red-100 text-red-700
+      {% elif bill.status == 'sent' %}bg-blue-100 text-blue-700
+      {% else %}bg-slate-100 text-slate-600{% endif %}">
+      {{ bill.get_status_display }}
+    </span>
+  </div>
+
+  <!-- Invoice header card -->
+  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+    <div class="flex justify-between items-start mb-4">
+      <div>
+        <p class="text-xs text-slate-400 uppercase tracking-wider">{% trans "Invoice" %}</p>
+        <p class="font-bold text-xl mt-0.5">{{ bill.invoice_number|default:"Draft" }}</p>
+      </div>
+      <div class="text-right">
+        <p class="text-xs text-slate-400">{% trans "Month" %}</p>
+        <p class="font-semibold text-sm mt-0.5">{{ bill.month|date:"F Y" }}</p>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3 text-sm mb-4">
+      <div class="bg-slate-50 rounded-xl p-3">
+        <p class="text-xs text-slate-400">{% trans "Room" %}</p>
+        <p class="font-semibold mt-0.5">{{ bill.room.number }} — {{ bill.room.floor.building.name }}</p>
+      </div>
+      <div class="bg-slate-50 rounded-xl p-3">
+        <p class="text-xs text-slate-400">{% trans "Due Date" %}</p>
+        <p class="font-semibold mt-0.5">{{ bill.due_date|date:"d M Y" }}</p>
+      </div>
+    </div>
+    <!-- Breakdown -->
+    <div class="border-t border-slate-100 pt-4 space-y-2 text-sm">
+      <div class="flex justify-between">
+        <span class="text-slate-500">{% trans "Base Rent" %}</span>
+        <span>฿{{ bill.base_rent|floatformat:2 }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500"><i class="fa-solid fa-bolt text-amber-400 mr-1"></i>{% trans "Electricity" %}</span>
+        <span>฿{{ bill.elec_amt|floatformat:2 }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500"><i class="fa-solid fa-droplet text-blue-400 mr-1"></i>{% trans "Water" %}</span>
+        <span>฿{{ bill.water_amt|floatformat:2 }}</span>
+      </div>
+      <div class="flex justify-between font-bold text-base border-t border-slate-100 pt-2">
+        <span>{% trans "Total" %}</span>
+        <span class="text-primary">฿{{ bill.total|floatformat:2 }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payment info (if paid) -->
+  {% if payment %}
+  <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
+    <div class="flex items-center gap-2 mb-3">
+      <i class="fa-solid fa-circle-check text-emerald-600"></i>
+      <span class="font-semibold text-emerald-800">{% trans "Payment Received" %}</span>
+    </div>
+    <div class="space-y-1.5 text-sm">
+      <div class="flex justify-between">
+        <span class="text-emerald-700">{% trans "Amount" %}</span>
+        <span class="font-semibold">฿{{ payment.amount|floatformat:2 }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-emerald-700">{% trans "TMR Ref" %}</span>
+        <span class="font-mono text-xs">{{ payment.tmr_ref }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-emerald-700">{% trans "Paid At" %}</span>
+        <span>{{ payment.paid_at|date:"d M Y H:i" }}</span>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Status update (owner/staff) -->
+  {% if bill.status != 'paid' %}
+  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+    <p class="text-sm font-semibold mb-3">{% trans "Update Status" %}</p>
+    <form method="post" class="flex gap-2 flex-wrap">
+      {% csrf_token %}
+      {% for val, label in bill.Status.choices %}
+      {% if val != bill.status and val != 'paid' %}
+      <button type="submit" name="status" value="{{ val }}"
+              class="flex-1 min-w-[100px] text-sm py-2.5 rounded-xl border font-medium transition-colors
+        {% if val == 'sent' %}border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100
+        {% elif val == 'overdue' %}border-red-200 text-red-700 bg-red-50 hover:bg-red-100
+        {% else %}border-slate-200 text-slate-600 bg-slate-50 hover:bg-slate-100{% endif %}">
+        {{ label }}
+      </button>
+      {% endif %}
+      {% endfor %}
+    </form>
+  </div>
+  {% endif %}
+
+  <!-- Timestamps -->
+  <p class="text-xs text-center text-slate-400">
+    {% trans "Created" %}: {{ bill.created_at|date:"d M Y H:i" }} ·
+    {% trans "Updated" %}: {{ bill.updated_at|date:"d M Y H:i" }}
+  </p>
+
+</div>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Bills" %} - DMS{% endblock %}
+{% block nav_billing %}text-primary{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+
+  <!-- Header + Settings link -->
+  <div class="flex items-center justify-between">
+    <h2 class="font-bold text-lg">{% trans "Bills" %}</h2>
+    <a href="{% url 'billing:settings' %}" class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-primary px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-sm">
+      <i class="fa-solid fa-gear"></i>{% trans "Settings" %}
+    </a>
+  </div>
+
+  <!-- Filters -->
+  <form method="get" class="flex gap-2 flex-wrap">
+    <select name="status" onchange="this.form.submit()"
+            class="text-sm h-9 rounded-lg border border-slate-200 bg-white px-3 focus:ring-primary focus:border-primary">
+      <option value="">{% trans "All statuses" %}</option>
+      {% for val, label in status_choices %}
+      <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input type="month" name="month" value="{{ month_filter }}" onchange="this.form.submit()"
+           class="text-sm h-9 rounded-lg border border-slate-200 bg-white px-3 focus:ring-primary focus:border-primary"/>
+    {% if status_filter or month_filter %}
+    <a href="{% url 'billing:list' %}" class="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 px-3 py-1.5 rounded-lg bg-white border border-slate-200">
+      <i class="fa-solid fa-xmark"></i>{% trans "Clear" %}
+    </a>
+    {% endif %}
+  </form>
+
+  <!-- Bill list -->
+  {% if not bills %}
+  <div class="bg-white rounded-2xl border border-slate-100 p-10 text-center shadow-sm">
+    <i class="fa-solid fa-file-invoice text-slate-300 text-5xl mb-3"></i>
+    <p class="text-slate-500">{% trans "No bills found." %}</p>
+  </div>
+  {% else %}
+  <div class="space-y-2">
+    {% for bill in bills %}
+    <a href="{% url 'billing:detail' bill.pk %}"
+       class="flex items-center justify-between bg-white rounded-2xl border border-slate-100 shadow-sm px-4 py-3 hover:border-primary/30 transition-colors">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0
+          {% if bill.status == 'paid' %}bg-emerald-100 text-emerald-600
+          {% elif bill.status == 'overdue' %}bg-red-100 text-red-600
+          {% elif bill.status == 'sent' %}bg-blue-100 text-blue-600
+          {% else %}bg-slate-100 text-slate-500{% endif %}">
+          <i class="fa-solid fa-file-invoice text-sm"></i>
+        </div>
+        <div>
+          <p class="font-semibold text-sm">{% trans "Room" %} {{ bill.room.number }}</p>
+          <p class="text-xs text-slate-400">{{ bill.month|date:"M Y" }} · {{ bill.invoice_number|default:"-" }}</p>
+        </div>
+      </div>
+      <div class="text-right">
+        <p class="font-bold text-sm text-primary">฿{{ bill.total|floatformat:0 }}</p>
+        <span class="text-[10px] px-2 py-0.5 rounded-full font-medium
+          {% if bill.status == 'paid' %}bg-emerald-100 text-emerald-700
+          {% elif bill.status == 'overdue' %}bg-red-100 text-red-700
+          {% elif bill.status == 'sent' %}bg-blue-100 text-blue-700
+          {% else %}bg-slate-100 text-slate-600{% endif %}">
+          {{ bill.get_status_display }}
+        </span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

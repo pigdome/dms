@@ -1,6 +1,7 @@
 from datetime import date
 
 from django.test import TestCase
+from django.urls import reverse
 
 from apps.core.models import Dormitory, CustomUser
 from apps.rooms.models import Building, Floor, Room
@@ -163,3 +164,79 @@ class DormProfilesIsolationTests(TestCase):
         # Must not appear via active-lease path, but can appear via legacy room FK fallback
         # because ended_tenant has no TenantProfile.room set and no active lease
         self.assertNotIn(ended_tenant, profiles)
+
+
+# ---------------------------------------------------------------------------
+# TenantImportView tests
+# ---------------------------------------------------------------------------
+
+class TenantImportViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory, CustomUser
+        from apps.rooms.models import Building, Floor, Room
+
+        cls.dorm = Dormitory.objects.create(name='Import Dorm', address='Addr')
+        cls.owner = CustomUser.objects.create_user(
+            'import_owner', password='pass', role='owner', dormitory=cls.dorm
+        )
+        b = Building.objects.create(dormitory=cls.dorm, name='B')
+        f = Floor.objects.create(building=b, number=1)
+        cls.room = Room.objects.create(floor=f, number='101', base_rent=5000, status='vacant')
+
+    def _login(self):
+        self.client.force_login(self.owner)
+
+    def _csv_upload(self, content):
+        import io
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return SimpleUploadedFile('tenants.csv', content.encode(), content_type='text/csv')
+
+    def test_get_returns_200(self):
+        self._login()
+        resp = self.client.get(reverse('tenants:import'))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_import_csv_creates_tenant(self):
+        from apps.core.models import CustomUser
+        self._login()
+        csv = 'username,first_name,last_name,phone\nnew_t1,First,Last,0812345678\n'
+        resp = self.client.post(
+            reverse('tenants:import'),
+            {'file': self._csv_upload(csv)},
+        )
+        self.assertRedirects(resp, reverse('tenants:list'), fetch_redirect_response=False)
+        self.assertTrue(CustomUser.objects.filter(username='new_t1').exists())
+
+    def test_import_csv_with_room_assigns_room(self):
+        from apps.tenants.models import TenantProfile
+        self._login()
+        csv = 'username,first_name,last_name,room_number,start_date\nnew_t2,A,B,101,2025-01-01\n'
+        self.client.post(reverse('tenants:import'), {'file': self._csv_upload(csv)})
+        profile = TenantProfile.objects.get(user__username='new_t2')
+        self.assertEqual(profile.room, self.room)
+
+    def test_import_csv_skips_duplicate_username(self):
+        from apps.core.models import CustomUser
+        self._login()
+        # Create existing user
+        CustomUser.objects.create_user('dup_user', password='x', dormitory=self.dorm)
+        csv = 'username,first_name,last_name\ndup_user,F,L\n'
+        resp = self.client.post(reverse('tenants:import'), {'file': self._csv_upload(csv)})
+        self.assertRedirects(resp, reverse('tenants:list'), fetch_redirect_response=False)
+        # Still only one user with that username
+        self.assertEqual(CustomUser.objects.filter(username='dup_user').count(), 1)
+
+    def test_import_no_file_redirects_with_error(self):
+        self._login()
+        resp = self.client.post(reverse('tenants:import'), {})
+        self.assertRedirects(resp, reverse('tenants:import'), fetch_redirect_response=False)
+
+    def test_tenant_cannot_access_import(self):
+        from apps.core.models import CustomUser
+        tenant = CustomUser.objects.create_user(
+            'import_tenant', password='pass', role='tenant', dormitory=self.dorm
+        )
+        self.client.force_login(tenant)
+        resp = self.client.get(reverse('tenants:import'))
+        self.assertRedirects(resp, reverse('tenant:home'), fetch_redirect_response=False)

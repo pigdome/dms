@@ -17,11 +17,13 @@ OWNER_URLS = [
     "/rooms/meter-reading/",
     "/tenants/",
     "/tenants/add/",
+    "/tenants/import/",
     "/maintenance/",
     "/maintenance/create/",
     "/notifications/parcels/",
     "/notifications/parcels/history/",
     "/notifications/broadcast/",
+    "/billing/",
     "/billing/settings/",
     "/setup/",
 ]
@@ -29,6 +31,9 @@ OWNER_URLS = [
 # Tenant-only URLs
 TENANT_URLS = [
     "/tenant/home/",
+    "/tenant/bills/",
+    "/tenant/parcels/",
+    "/tenant/profile/",
     "/tenant/maintenance/",
 ]
 

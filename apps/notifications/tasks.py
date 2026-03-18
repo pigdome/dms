@@ -53,16 +53,12 @@ def send_dunning_notification_task(self, bill_pk: int, trigger_type: str):
 
 
 def _deliver_dunning(bill, trigger_type: str):
-    """
-    Deliver a dunning message via the configured channel.
-    Extend this function when LINE Messaging API is integrated.
-    """
-    # TODO: implement LINE push message
-    # from apps.notifications.line import push_dunning_message
-    # push_dunning_message(bill, trigger_type)
+    """Deliver a dunning message via LINE Messaging API."""
+    from apps.notifications.line import push_dunning_message
+    sent = push_dunning_message(bill, trigger_type)
     logger.info(
-        'Dunning %s for bill %s (room %s, due %s) — delivery not yet implemented',
-        trigger_type, bill.invoice_number, bill.room, bill.due_date,
+        'Dunning %s for bill %s (room %s, due %s) — LINE sent: %s',
+        trigger_type, bill.invoice_number, bill.room, bill.due_date, sent,
     )
 
 
@@ -79,10 +75,9 @@ def send_parcel_notification_task(self, parcel_pk: int):
         return
 
     try:
-        # TODO: implement LINE push message
-        # from apps.notifications.line import push_parcel_notification
-        # push_parcel_notification(parcel)
-        logger.info('Parcel notification for room %s — delivery not yet implemented', parcel.room)
+        from apps.notifications.line import push_parcel_notification
+        push_parcel_notification(parcel)
+        logger.info('Parcel notification sent for room %s', parcel.room)
         parcel.notified_at = timezone.now()
         parcel.save(update_fields=['notified_at'])
     except Exception as exc:

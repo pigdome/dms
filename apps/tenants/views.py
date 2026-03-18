@@ -165,6 +165,104 @@ class TenantCreateView(View):
 
 
 @method_decorator([login_required, staff_required], name='dispatch')
+class TenantImportView(View):
+    """Import tenants from CSV or Excel (xlsx) file."""
+
+    REQUIRED_COLS = {'username', 'first_name', 'last_name'}
+
+    def get(self, request):
+        return render(request, 'tenants/import.html', {
+            'sample_headers': 'username,first_name,last_name,phone,room_number,start_date,password',
+        })
+
+    def post(self, request):
+        from apps.core.models import CustomUser
+        from apps.rooms.models import Room
+
+        dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
+        upload = request.FILES.get('file')
+        if not upload:
+            messages.error(request, _('Please upload a CSV or Excel file.'))
+            return redirect('tenants:import')
+
+        ext = upload.name.rsplit('.', 1)[-1].lower()
+        try:
+            rows = self._parse_file(upload, ext)
+        except Exception as e:
+            messages.error(request, _('Could not read file: %(err)s') % {'err': str(e)})
+            return redirect('tenants:import')
+
+        created, skipped, errors = 0, 0, []
+        for i, row in enumerate(rows, start=2):
+            username = str(row.get('username', '')).strip()
+            if not username:
+                skipped += 1
+                continue
+            if CustomUser.objects.filter(username=username).exists():
+                errors.append(_('Row %(n)s: username "%(u)s" already exists.') % {'n': i, 'u': username})
+                skipped += 1
+                continue
+
+            user = CustomUser.objects.create_user(
+                username=username,
+                password=str(row.get('password', username)).strip() or username,
+                first_name=str(row.get('first_name', '')).strip(),
+                last_name=str(row.get('last_name', '')).strip(),
+                role='tenant',
+                dormitory=dorm,
+            )
+            room = None
+            room_number = str(row.get('room_number', '')).strip()
+            if room_number:
+                room = Room.objects.filter(
+                    number=room_number, floor__building__dormitory=dorm
+                ).first()
+                if room:
+                    room.status = 'occupied'
+                    room.save(update_fields=['status'])
+
+            profile = TenantProfile.objects.create(
+                user=user,
+                room=room,
+                phone=str(row.get('phone', '')).strip(),
+            )
+            start_date = str(row.get('start_date', '')).strip()
+            if start_date and room:
+                try:
+                    Lease.objects.create(tenant=profile, room=room, start_date=start_date, status='active')
+                except Exception:
+                    pass
+            created += 1
+
+        if errors:
+            for err in errors[:5]:
+                messages.warning(request, err)
+        messages.success(request, _('Import complete: %(c)s created, %(s)s skipped.') % {'c': created, 's': skipped})
+        return redirect('tenants:list')
+
+    def _parse_file(self, upload, ext):
+        if ext == 'csv':
+            import csv, io
+            text = upload.read().decode('utf-8-sig')
+            reader = csv.DictReader(io.StringIO(text))
+            return [dict(row) for row in reader]
+        else:
+            import openpyxl
+            wb = openpyxl.load_workbook(upload, read_only=True, data_only=True)
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True))
+            if not rows:
+                return []
+            headers = [str(h).strip().lower() if h else '' for h in rows[0]]
+            result = []
+            for row in rows[1:]:
+                if not any(row):
+                    continue
+                result.append({headers[i]: (str(v).strip() if v is not None else '') for i, v in enumerate(row)})
+            return result
+
+
+@method_decorator([login_required, staff_required], name='dispatch')
 class TenantUpdateView(View):
     def get(self, request, pk):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
@@ -273,6 +371,43 @@ class TenantHomeView(View):
             'leases': leases,
             'all_bills': all_bills,
             'maintenance_tickets': maintenance_tickets,
+        })
+
+
+@method_decorator(login_required, name='dispatch')
+class TenantBillDetailView(View):
+    """Tenant bill detail with payment QR."""
+
+    def get(self, request, pk):
+        user = request.user
+        if user.role not in ('tenant',):
+            return redirect('dashboard:index')
+
+        try:
+            profile = user.tenant_profile
+        except TenantProfile.DoesNotExist:
+            return redirect('tenant:home')
+
+        from apps.billing.models import Bill
+        bill = get_object_or_404(
+            Bill.objects.select_related('room__floor__building__dormitory'),
+            pk=pk, room__leases__tenant=profile
+        )
+        payment = getattr(bill, 'payment', None)
+
+        # TMR QR URL (if bill is unpaid and dormitory has TMR configured)
+        tmr_qr_url = None
+        try:
+            billing_settings = bill.room.floor.building.dormitory.billing_settings
+            if billing_settings.tmr_api_key and bill.status in ('sent', 'overdue'):
+                tmr_qr_url = f"https://payment.tmr.th/qr/{billing_settings.tmr_api_key}/{bill.invoice_number}"
+        except Exception:
+            pass
+
+        return render(request, 'tenants/tenant_bill_detail.html', {
+            'bill': bill,
+            'payment': payment,
+            'tmr_qr_url': tmr_qr_url,
         })
 
 

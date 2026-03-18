@@ -470,3 +470,148 @@ class TMRWebhookTests(TestCase):
             content_type='application/json',
         )
         self.assertEqual(resp.status_code, 400)
+
+
+# ---------------------------------------------------------------------------
+# BillListView tests
+# ---------------------------------------------------------------------------
+
+class BillListViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory, CustomUser
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill
+
+        cls.dorm = Dormitory.objects.create(name='List Dorm', address='Addr', invoice_prefix='LD1')
+        cls.owner = CustomUser.objects.create_user(
+            'lv_owner', password='pass', role='owner', dormitory=cls.dorm
+        )
+        b = Building.objects.create(dormitory=cls.dorm, name='B')
+        f = Floor.objects.create(building=b, number=1)
+        cls.room = Room.objects.create(floor=f, number='101', base_rent=5000)
+
+        cls.bill_paid = Bill.objects.create(
+            room=cls.room, month=date(2025, 1, 1), base_rent=5000,
+            total=5000, due_date=date(2025, 1, 25), status='paid',
+        )
+        cls.bill_overdue = Bill.objects.create(
+            room=cls.room, month=date(2025, 2, 1), base_rent=5000,
+            total=5000, due_date=date(2025, 2, 25), status='overdue',
+        )
+
+    def _login(self):
+        self.client.force_login(self.owner)
+
+    def test_list_returns_200(self):
+        self._login()
+        resp = self.client.get(reverse('billing:list'))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_list_contains_both_bills(self):
+        self._login()
+        resp = self.client.get(reverse('billing:list'))
+        self.assertIn(self.bill_paid, resp.context['bills'])
+        self.assertIn(self.bill_overdue, resp.context['bills'])
+
+    def test_filter_by_status(self):
+        self._login()
+        resp = self.client.get(reverse('billing:list'), {'status': 'paid'})
+        bills = list(resp.context['bills'])
+        self.assertIn(self.bill_paid, bills)
+        self.assertNotIn(self.bill_overdue, bills)
+
+    def test_filter_by_month(self):
+        self._login()
+        resp = self.client.get(reverse('billing:list'), {'month': '2025-01'})
+        bills = list(resp.context['bills'])
+        self.assertIn(self.bill_paid, bills)
+        self.assertNotIn(self.bill_overdue, bills)
+
+    def test_tenant_redirected(self):
+        from apps.core.models import CustomUser
+        tenant = CustomUser.objects.create_user(
+            'lv_tenant', password='pass', role='tenant', dormitory=self.dorm
+        )
+        self.client.force_login(tenant)
+        resp = self.client.get(reverse('billing:list'))
+        self.assertRedirects(resp, reverse('tenant:home'), fetch_redirect_response=False)
+
+    def test_unauthenticated_redirected(self):
+        resp = self.client.get(reverse('billing:list'))
+        self.assertEqual(resp.status_code, 302)
+
+
+# ---------------------------------------------------------------------------
+# BillDetailView tests
+# ---------------------------------------------------------------------------
+
+class BillDetailViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory, CustomUser
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill
+
+        cls.dorm = Dormitory.objects.create(name='Detail Dorm', address='Addr', invoice_prefix='DD1')
+        cls.owner = CustomUser.objects.create_user(
+            'dv_owner', password='pass', role='owner', dormitory=cls.dorm
+        )
+        b = Building.objects.create(dormitory=cls.dorm, name='B')
+        f = Floor.objects.create(building=b, number=1)
+        cls.room = Room.objects.create(floor=f, number='101', base_rent=5000)
+        cls.bill = Bill.objects.create(
+            room=cls.room, month=date(2025, 3, 1), base_rent=5000,
+            total=5000, due_date=date(2025, 3, 25), status='sent',
+        )
+
+    def _login(self):
+        self.client.force_login(self.owner)
+
+    def test_detail_returns_200(self):
+        self._login()
+        resp = self.client.get(reverse('billing:detail', args=[self.bill.pk]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_detail_contains_bill_in_context(self):
+        self._login()
+        resp = self.client.get(reverse('billing:detail', args=[self.bill.pk]))
+        self.assertEqual(resp.context['bill'], self.bill)
+
+    def test_post_updates_status_to_overdue(self):
+        from apps.billing.models import Bill
+        self._login()
+        resp = self.client.post(
+            reverse('billing:detail', args=[self.bill.pk]),
+            {'status': 'overdue'},
+        )
+        self.assertRedirects(resp, reverse('billing:detail', args=[self.bill.pk]),
+                             fetch_redirect_response=False)
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, Bill.Status.OVERDUE)
+
+    def test_post_invalid_status_does_not_change(self):
+        self._login()
+        self.client.post(
+            reverse('billing:detail', args=[self.bill.pk]),
+            {'status': 'invalid_status'},
+        )
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.status, 'sent')
+
+    def test_cross_dorm_bill_returns_404(self):
+        from apps.core.models import Dormitory, CustomUser
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill
+
+        other_dorm = Dormitory.objects.create(name='Other', address='O')
+        ob = Building.objects.create(dormitory=other_dorm, name='OB')
+        of = Floor.objects.create(building=ob, number=1)
+        other_room = Room.objects.create(floor=of, number='999', base_rent=3000)
+        other_bill = Bill.objects.create(
+            room=other_room, month=date(2025, 4, 1), base_rent=3000,
+            total=3000, due_date=date(2025, 4, 25),
+        )
+        self._login()
+        resp = self.client.get(reverse('billing:detail', args=[other_bill.pk]))
+        self.assertEqual(resp.status_code, 404)

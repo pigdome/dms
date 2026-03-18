@@ -4,6 +4,7 @@ from apps.tenants.views import (
     TenantDetailView,
     TenantCreateView,
     TenantUpdateView,
+    TenantImportView,
 )
 
 app_name = 'tenants'
@@ -11,6 +12,7 @@ app_name = 'tenants'
 urlpatterns = [
     path('', TenantListView.as_view(), name='list'),
     path('add/', TenantCreateView.as_view(), name='create'),
+    path('import/', TenantImportView.as_view(), name='import'),
     path('<int:pk>/', TenantDetailView.as_view(), name='detail'),
     path('<int:pk>/edit/', TenantUpdateView.as_view(), name='update'),
 ]

@@ -14,6 +14,8 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from django.shortcuts import get_object_or_404
+
 from apps.billing.models import Bill, BillingSettings, Payment
 
 
@@ -85,6 +87,70 @@ class BillingSettingsView(View):
 
         messages.success(request, _('Billing settings saved successfully.'))
         return redirect('billing:settings')
+
+
+@method_decorator([login_required, staff_required], name='dispatch')
+class BillListView(View):
+    def get(self, request):
+        dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
+        if not dorm:
+            messages.error(request, _('No dormitory associated with your account.'))
+            return redirect('dashboard:index')
+
+        bills = Bill.objects.filter(
+            room__floor__building__dormitory=dorm
+        ).select_related('room', 'room__floor', 'room__floor__building').order_by('-month', '-created_at')
+
+        # Filters
+        status_filter = request.GET.get('status', '')
+        month_filter = request.GET.get('month', '')
+        if status_filter:
+            bills = bills.filter(status=status_filter)
+        if month_filter:
+            try:
+                from datetime import datetime
+                month_date = datetime.strptime(month_filter, '%Y-%m').date()
+                bills = bills.filter(month__year=month_date.year, month__month=month_date.month)
+            except ValueError:
+                pass
+
+        return render(request, 'billing/list.html', {
+            'bills': bills,
+            'status_choices': Bill.Status.choices,
+            'status_filter': status_filter,
+            'month_filter': month_filter,
+        })
+
+
+@method_decorator([login_required, staff_required], name='dispatch')
+class BillDetailView(View):
+    def get(self, request, pk):
+        dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
+        bill = get_object_or_404(
+            Bill.objects.select_related('room__floor__building__dormitory'),
+            pk=pk, room__floor__building__dormitory=dorm
+        )
+        payment = getattr(bill, 'payment', None)
+        return render(request, 'billing/detail.html', {
+            'bill': bill,
+            'payment': payment,
+        })
+
+    def post(self, request, pk):
+        """Update bill status manually (draft→sent, sent→overdue etc.)."""
+        dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
+        bill = get_object_or_404(
+            Bill, pk=pk, room__floor__building__dormitory=dorm
+        )
+        new_status = request.POST.get('status', '').strip()
+        valid = [s[0] for s in Bill.Status.choices]
+        if new_status in valid:
+            bill.status = new_status
+            bill.save(update_fields=['status', 'updated_at'])
+            messages.success(request, _('Bill status updated.'))
+        else:
+            messages.error(request, _('Invalid status.'))
+        return redirect('billing:detail', pk=pk)
 
 
 @csrf_exempt

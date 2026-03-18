@@ -116,7 +116,7 @@
           <span class="text-xs text-slate-500">{% trans "Electricity" %}</span>
         </div>
         <p class="font-bold text-sm">{{ latest_meter.elec_curr }} <span class="font-normal text-xs text-slate-400">units</span></p>
-        <p class="text-xs text-slate-400">{% trans "Used" %}: {{ latest_meter.elec_curr|add:"-"|add:latest_meter.elec_prev }}</p>
+        <p class="text-xs text-slate-400">{% trans "Used" %}: {{ latest_meter.elec_used }}</p>
       </div>
       <div class="bg-blue-50 rounded-xl p-3">
         <div class="flex items-center gap-1.5 mb-1">
@@ -124,10 +124,10 @@
           <span class="text-xs text-slate-500">{% trans "Water" %}</span>
         </div>
         <p class="font-bold text-sm">{{ latest_meter.water_curr }} <span class="font-normal text-xs text-slate-400">units</span></p>
-        <p class="text-xs text-slate-400">{% trans "Used" %}: {{ latest_meter.water_curr|add:"-"|add:latest_meter.water_prev }}</p>
+        <p class="text-xs text-slate-400">{% trans "Used" %}: {{ latest_meter.water_used }}</p>
       </div>
     </div>
-    <p class="text-xs text-slate-400 mt-2"><i class="fa-regular fa-calendar mr-1"></i>{{ latest_meter.date|date:"d M Y" }}</p>
+    <p class="text-xs text-slate-400 mt-2"><i class="fa-regular fa-calendar mr-1"></i>{{ latest_meter.reading_date|date:"d M Y" }}</p>
   </div>
   {% endif %}
 
