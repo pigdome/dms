@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Dashboard" %} - DMS{% endblock %}
+
+{% block nav_dashboard %}text-primary{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-6">
+
+  {% if not active_dormitory %}
+  <div class="bg-amber-50 border border-amber-200 rounded-xl p-5 text-center">
+    <i class="fa-solid fa-triangle-exclamation text-amber-500 text-3xl mb-2"></i>
+    <p class="font-semibold text-amber-800">{% trans "No dormitory assigned" %}</p>
+    <p class="text-sm text-amber-600 mt-1">{% trans "Please contact a superadmin to assign you to a dormitory." %}</p>
+  </div>
+  {% else %}
+
+  <!-- Property switcher (owners with multiple dormitories) -->
+  {% if owned_dormitories|length > 1 %}
+  <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-1 flex gap-1">
+    {% for dorm in owned_dormitories %}
+    <form method="post" action="{% url 'core:property_switch' %}" class="flex-1">
+      {% csrf_token %}
+      <input type="hidden" name="dormitory_id" value="{{ dorm.pk }}">
+      <input type="hidden" name="next" value="{% url 'dashboard:index' %}">
+      <button type="submit"
+        class="w-full py-2 px-3 rounded-lg text-sm font-semibold transition-all
+               {% if dorm == active_dormitory %}bg-primary text-white shadow-sm{% else %}text-slate-500 hover:bg-slate-50{% endif %}">
+        {{ dorm.name }}
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Monthly overview KPIs -->
+  <section>
+    <h2 class="text-base font-bold text-slate-800 mb-3">{% trans "Monthly Overview" %}</h2>
+    <div class="grid grid-cols-2 gap-3">
+
+      <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+        <div class="flex items-center gap-2 mb-2">
+          <i class="fa-solid fa-coins text-primary"></i>
+          <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Revenue" %}</p>
+        </div>
+        <p class="text-xl font-bold">฿{{ total_income|floatformat:0 }}</p>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+        <div class="flex items-center gap-2 mb-2">
+          <i class="fa-solid fa-clock text-amber-500"></i>
+          <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Overdue" %}</p>
+        </div>
+        <p class="text-xl font-bold">{{ overdue_count }}</p>
+        <p class="text-[10px] text-slate-400">{% trans "rooms" %}</p>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+        <div class="flex items-center gap-2 mb-2">
+          <i class="fa-solid fa-door-open text-indigo-500"></i>
+          <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Vacant" %}</p>
+        </div>
+        <p class="text-xl font-bold">{{ vacant_count }}</p>
+        <p class="text-[10px] text-slate-400">{% trans "rooms" %}</p>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+        <div class="flex items-center gap-2 mb-2">
+          <i class="fa-solid fa-screwdriver-wrench text-rose-500"></i>
+          <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Tickets" %}</p>
+        </div>
+        <p class="text-xl font-bold">{{ pending_maintenance }}</p>
+        <p class="text-[10px] text-slate-400">{% trans "open" %}</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Quick-action shortcuts -->
+  <section>
+    <h2 class="text-base font-bold text-slate-800 mb-3">{% trans "Quick Actions" %}</h2>
+    <div class="grid grid-cols-4 gap-2">
+      <a href="{% url 'rooms:meter_reading' %}"
+         class="flex flex-col items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 active:scale-95 transition-transform">
+        <div class="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+          <i class="fa-solid fa-gauge-high text-2xl"></i>
+        </div>
+        <span class="text-[11px] font-bold text-center leading-tight">{% trans "Meters" %}</span>
+      </a>
+      <a href="{% url 'notifications:parcel_log' %}"
+         class="flex flex-col items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 active:scale-95 transition-transform">
+        <div class="w-12 h-12 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center">
+          <i class="fa-solid fa-box text-2xl"></i>
+        </div>
+        <span class="text-[11px] font-bold text-center leading-tight">{% trans "Parcels" %}</span>
+      </a>
+      <a href="{% url 'maintenance:list' %}"
+         class="flex flex-col items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 active:scale-95 transition-transform">
+        <div class="w-12 h-12 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center">
+          <i class="fa-solid fa-screwdriver-wrench text-2xl"></i>
+        </div>
+        <span class="text-[11px] font-bold text-center leading-tight">{% trans "Repair" %}</span>
+      </a>
+      <a href="{% url 'notifications:broadcast' %}"
+         class="flex flex-col items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 active:scale-95 transition-transform">
+        <div class="w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
+          <i class="fa-solid fa-bullhorn text-2xl"></i>
+        </div>
+        <span class="text-[11px] font-bold text-center leading-tight">{% trans "Broadcast" %}</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- Recent activity -->
+  <section class="pb-2">
+    <h2 class="text-base font-bold text-slate-800 mb-3">{% trans "Recent Activity" %}</h2>
+    {% if recent_activity %}
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+      {% for log in recent_activity %}
+      <div class="p-3 flex items-center gap-3 {% if not forloop.last %}border-b border-slate-50{% endif %}">
+        <div class="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+          <i class="fa-solid fa-circle-info"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium truncate">{{ log.action }}</p>
+          <p class="text-[11px] text-slate-400">{{ log.created_at|timesince }} {% trans "ago" %}</p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-6 text-center text-slate-400 text-sm">
+      {% trans "No recent activity." %}
+    </div>
+    {% endif %}
+  </section>
+
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,89 @@
+{% extends "base_tenant.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "My Profile" %} - DMS{% endblock %}
+
+{% block nav_profile %}text-primary{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+  <h2 class="font-bold text-lg">{% trans "My Profile" %}</h2>
+
+  <!-- User info -->
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+    <div class="flex items-center gap-4 mb-4">
+      <div class="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center">
+        <i class="fa-solid fa-user text-primary text-2xl"></i>
+      </div>
+      <div>
+        <p class="font-bold text-base">{{ profile.user.get_full_name|default:profile.user.username }}</p>
+        <p class="text-xs text-slate-400 mt-0.5">{{ profile.user.username }}</p>
+      </div>
+    </div>
+    <div class="space-y-3 text-sm">
+      {% if profile.phone %}
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
+          <i class="fa-solid fa-phone text-slate-500 text-xs"></i>
+        </div>
+        <div>
+          <p class="text-xs text-slate-400">{% trans "Phone" %}</p>
+          <p class="font-medium">{{ profile.phone }}</p>
+        </div>
+      </div>
+      {% endif %}
+      {% if profile.line_id %}
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
+          <i class="fa-solid fa-comment text-slate-500 text-xs"></i>
+        </div>
+        <div>
+          <p class="text-xs text-slate-400">{% trans "LINE ID" %}</p>
+          <p class="font-medium">{{ profile.line_id }}</p>
+        </div>
+      </div>
+      {% endif %}
+      {% if profile.room %}
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
+          <i class="fa-solid fa-door-open text-slate-500 text-xs"></i>
+        </div>
+        <div>
+          <p class="text-xs text-slate-400">{% trans "Current Room" %}</p>
+          <p class="font-medium">{% trans "Room" %} {{ profile.room.number }} — {{ profile.room.floor.building.name }}</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Lease history -->
+  {% if leases %}
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+    <div class="flex items-center gap-2 mb-3">
+      <i class="fa-solid fa-file-contract text-primary"></i>
+      <span class="font-semibold">{% trans "Lease History" %}</span>
+    </div>
+    <div class="space-y-3">
+      {% for lease in leases %}
+      <div class="flex items-center gap-3 border-b border-slate-50 pb-3 last:border-0 last:pb-0">
+        <div class="w-2 h-2 rounded-full flex-shrink-0 {% if lease.status == 'active' %}bg-emerald-400{% else %}bg-slate-300{% endif %}"></div>
+        <div class="flex-1">
+          {% if lease.room %}
+          <p class="text-sm font-medium">{% trans "Room" %} {{ lease.room.number }} — {{ lease.room.floor.building.name }}</p>
+          {% endif %}
+          <p class="text-xs text-slate-400">
+            {{ lease.start_date|date:"d M Y" }} — {% if lease.end_date %}{{ lease.end_date|date:"d M Y" }}{% else %}{% trans "Ongoing" %}{% endif %}
+          </p>
+        </div>
+        <span class="text-xs px-2 py-0.5 rounded-full {% if lease.status == 'active' %}bg-emerald-100 text-emerald-700{% else %}bg-slate-100 text-slate-500{% endif %}">
+          {{ lease.get_status_display|default:lease.status }}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

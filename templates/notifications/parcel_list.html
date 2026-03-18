@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Parcel History" %} - DMS{% endblock %}
+{% block nav_parcels %}active{% endblock %}
+
+{% block content %}
+<div class="pb-24 lg:pb-6">
+    <!-- Header -->
+    <div class="flex items-center bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 sticky top-14 z-20">
+        <a href="{% url 'notifications:parcel_log' %}" class="flex items-center justify-center size-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mr-2">
+            <i class="fa-solid fa-arrow-left"></i>
+        </a>
+        <h2 class="text-lg font-bold flex-1">{% trans "Parcel History" %}</h2>
+        <a href="{% url 'notifications:parcel_log' %}" class="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-sm font-semibold">
+            <i class="fa-solid fa-plus"></i>
+            {% trans "Log Parcel" %}
+        </a>
+    </div>
+
+    <div class="max-w-2xl mx-auto p-4 space-y-3">
+        {% for parcel in parcels %}
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm">
+            <div class="flex gap-4">
+                {% if parcel.photo %}
+                <div class="shrink-0">
+                    <img src="{{ parcel.photo.url }}" alt="{% trans "Parcel" %}" class="w-20 h-20 rounded-lg object-cover"/>
+                </div>
+                {% else %}
+                <div class="shrink-0 w-20 h-20 rounded-lg bg-amber-100 flex items-center justify-center">
+                    <i class="fa-solid fa-box"></i>
+                </div>
+                {% endif %}
+                <div class="flex-1">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-bold">{% trans "Room" %} {{ parcel.room.number }}</h3>
+                            <p class="text-sm text-slate-500">{{ parcel.carrier }}</p>
+                        </div>
+                        {% if parcel.notified_at %}
+                        <span class="inline-flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full font-medium">
+                            <i class="fa-solid fa-circle-check"></i>
+                            {% trans "Notified" %}
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium">
+                            <i class="fa-regular fa-clock"></i>
+                            {% trans "Pending" %}
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% if parcel.notes %}
+                    <p class="text-xs text-slate-400 mt-1">{{ parcel.notes }}</p>
+                    {% endif %}
+                    <div class="flex items-center gap-1 mt-2 text-xs text-slate-400">
+                        <i class="fa-regular fa-calendar"></i>
+                        {{ parcel.created_at|date:"d M Y H:i" }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="py-16 text-center text-slate-400">
+            <i class="fa-solid fa-box"></i>
+            <p class="font-medium">{% trans "No parcels logged yet" %}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

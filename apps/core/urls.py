@@ -1,0 +1,11 @@
+from django.urls import path
+from apps.core.views import login_view, logout_view, SetupWizardView, property_switch_view
+
+app_name = 'core'
+
+urlpatterns = [
+    path('login/', login_view, name='login'),
+    path('logout/', logout_view, name='logout'),
+    path('setup/', SetupWizardView.as_view(), name='setup_wizard'),
+    path('property/switch/', property_switch_view, name='property_switch'),
+]

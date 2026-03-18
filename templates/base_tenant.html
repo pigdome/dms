@@ -1,0 +1,110 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>{% block title %}{% trans "DMS" %}{% endblock %}</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: {
+                    "primary": "#137fec",
+                    "background-light": "#f6f7f8",
+                },
+                fontFamily: { "display": ["Inter", "sans-serif"] },
+                borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+            },
+        },
+    }
+</script>
+<style>body { font-family: 'Inter', sans-serif; }</style>
+{% block extra_head %}{% endblock %}
+</head>
+<body class="bg-slate-200 font-display text-slate-900 min-h-screen">
+
+<!-- Center-column shell: full-width on mobile, 680px centered on desktop -->
+<div class="min-h-screen lg:max-w-[680px] lg:mx-auto lg:shadow-xl bg-background-light flex flex-col">
+
+    <!-- FIXED HEADER -->
+    <header class="fixed top-0 left-0 right-0 z-30 bg-white border-b border-slate-200 lg:max-w-[680px] lg:left-1/2 lg:-translate-x-1/2">
+        <div class="flex items-center justify-between px-4 h-14">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-building text-white text-sm"></i>
+                </div>
+                <div>
+                    <span class="font-bold text-sm leading-none">{% trans "DMS" %}</span>
+                    {% if request.user.is_authenticated and request.user.dormitory %}
+                    <div class="text-[10px] text-slate-400 leading-none mt-0.5">{{ request.user.dormitory.name }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="flex items-center gap-1.5">
+                    <i class="fa-regular fa-circle-user text-primary text-lg"></i>
+                    <span class="text-sm text-slate-600 hidden sm:block">{{ request.user.get_full_name|default:request.user.username }}</span>
+                </div>
+                <form method="post" action="{% url 'core:logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="{% trans 'Logout' %}">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </header>
+
+    <!-- SCROLLABLE CONTENT AREA -->
+    <main class="flex-1 pt-14 pb-16">
+        {% if messages %}
+        <div class="px-4 pt-3 space-y-2">
+            {% for message in messages %}
+            <div class="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium
+                {% if message.tags == 'error' %}bg-red-50 text-red-700 border border-red-200
+                {% elif message.tags == 'success' %}bg-emerald-50 text-emerald-700 border border-emerald-200
+                {% elif message.tags == 'warning' %}bg-amber-50 text-amber-700 border border-amber-200
+                {% else %}bg-blue-50 text-blue-700 border border-blue-200{% endif %}">
+                <i class="{% if message.tags == 'error' %}fa-solid fa-circle-xmark{% elif message.tags == 'success' %}fa-solid fa-circle-check{% elif message.tags == 'warning' %}fa-solid fa-triangle-exclamation{% else %}fa-solid fa-circle-info{% endif %} text-lg flex-shrink-0"></i>
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- FIXED BOTTOM NAV (Tenant) -->
+    <nav class="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 lg:max-w-[680px] lg:left-1/2 lg:-translate-x-1/2">
+        <div class="flex justify-around items-center h-16">
+            <a href="{% url 'tenant:home' %}" class="flex flex-col items-center gap-0.5 px-2 py-1 min-w-[48px] {% block nav_home %}text-slate-400 hover:text-primary{% endblock %} transition-colors">
+                <i class="fa-solid fa-house text-xl"></i>
+                <span class="text-[10px] font-medium">{% trans "Home" %}</span>
+            </a>
+            <a href="{% url 'tenant:bills' %}" class="flex flex-col items-center gap-0.5 px-2 py-1 min-w-[48px] {% block nav_bills %}text-slate-400 hover:text-primary{% endblock %} transition-colors">
+                <i class="fa-solid fa-receipt text-xl"></i>
+                <span class="text-[10px] font-medium">{% trans "Bills" %}</span>
+            </a>
+            <a href="{% url 'tenant:parcels' %}" class="flex flex-col items-center gap-0.5 px-2 py-1 min-w-[48px] {% block nav_parcels %}text-slate-400 hover:text-primary{% endblock %} transition-colors">
+                <i class="fa-solid fa-box text-xl"></i>
+                <span class="text-[10px] font-medium">{% trans "Parcels" %}</span>
+            </a>
+            <a href="{% url 'tenant:maintenance' %}" class="flex flex-col items-center gap-0.5 px-2 py-1 min-w-[48px] {% block nav_maintenance %}text-slate-400 hover:text-primary{% endblock %} transition-colors">
+                <i class="fa-solid fa-screwdriver-wrench text-xl"></i>
+                <span class="text-[10px] font-medium">{% trans "Repair" %}</span>
+            </a>
+            <a href="{% url 'tenant:profile' %}" class="flex flex-col items-center gap-0.5 px-2 py-1 min-w-[48px] {% block nav_profile %}text-slate-400 hover:text-primary{% endblock %} transition-colors">
+                <i class="fa-solid fa-user text-xl"></i>
+                <span class="text-[10px] font-medium">{% trans "Profile" %}</span>
+            </a>
+        </div>
+    </nav>
+
+</div>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

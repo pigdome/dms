@@ -1,0 +1,93 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>{% trans "Submit Repair Request" %} - DMS</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: { "primary": "#137fec", "background-light": "#f6f7f8" },
+                fontFamily: { "display": ["Inter", "sans-serif"] },
+                borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+            },
+        },
+    }
+</script>
+<style>
+    body { font-family: 'Inter', sans-serif; }
+    
+</style>
+</head>
+<body class="bg-background-light text-slate-900 min-h-screen">
+
+<div class="relative flex min-h-screen w-full flex-col overflow-x-hidden pb-20">
+    <!-- Header -->
+    <header class="sticky top-0 z-50 flex items-center bg-white px-4 py-3 shadow-sm">
+        <a href="{% url 'tenant:home' %}" class="flex items-center justify-center size-10 rounded-full hover:bg-slate-100 transition-colors">
+            <i class="fa-solid fa-arrow-left"></i>
+        </a>
+        <h1 class="text-lg font-bold flex-1 text-center mr-10">{% trans "Submit Repair Request" %}</h1>
+    </header>
+
+    {% if messages %}
+    <div class="px-4 pt-4 space-y-2">
+        {% for message in messages %}
+        <div class="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium
+            {% if message.tags == 'error' %}bg-red-50 text-red-700 border border-red-200
+            {% elif message.tags == 'success' %}bg-emerald-50 text-emerald-700 border border-emerald-200
+            {% else %}bg-blue-50 text-blue-700 border border-blue-200{% endif %}">
+            <i class="text-lg {% if message.tags == 'error' %}fa-solid fa-circle-xmark{% elif message.tags == 'success' %}fa-solid fa-circle-check{% else %}fa-solid fa-circle-info{% endif %}"></i>
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="max-w-md mx-auto w-full px-4 py-6">
+        <!-- Room info -->
+        <div class="bg-white rounded-xl border border-slate-200 p-4 mb-6 flex items-center gap-3">
+            <div class="size-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <i class="fa-solid fa-door-open"></i>
+            </div>
+            <div>
+                <p class="text-xs text-slate-500">{% trans "Submitting for" %}</p>
+                <p class="font-bold">{% trans "Room" %} {{ room.number }} &mdash; {{ room.floor.building.name }}</p>
+            </div>
+        </div>
+
+        <form method="post" enctype="multipart/form-data" class="space-y-5">
+            {% csrf_token %}
+
+            <div class="flex flex-col gap-1.5">
+                <label class="text-sm font-semibold text-slate-700">{% trans "Describe the Issue" %} <span class="text-red-500">*</span></label>
+                <textarea name="description" rows="5" required
+                          class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none"
+                          placeholder="{% trans "Please describe the problem in detail (e.g. leaking faucet, broken AC, etc.)" %}">{{ form.description.value|default:'' }}</textarea>
+                {% if form.description.errors %}<p class="text-xs text-red-500">{{ form.description.errors.0 }}</p>{% endif %}
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+                <label class="text-sm font-semibold text-slate-700">{% trans "Photos (optional)" %}</label>
+                <label class="w-full py-4 px-4 border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center gap-2 text-slate-500 font-medium hover:bg-slate-50 transition-colors cursor-pointer">
+                    <i class="fa-solid fa-camera-retro"></i>
+                    {% trans "Upload Photos" %}
+                    <input type="file" name="photos" accept="image/*" multiple class="hidden"/>
+                </label>
+            </div>
+
+            <button type="submit" class="w-full bg-primary text-white font-bold h-14 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/20 active:scale-[0.98] transition-all">
+                <i class="fa-solid fa-paper-plane"></i>
+                {% trans "Submit Request" %}
+            </button>
+        </form>
+    </div>
+</div>
+
+</body>
+</html>

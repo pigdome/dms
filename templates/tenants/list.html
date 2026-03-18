@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Tenants" %} - DMS{% endblock %}
+{% block nav_tenants %}text-primary{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+
+  <!-- Header row -->
+  <div class="flex items-center justify-between">
+    <h1 class="text-lg font-bold text-slate-800">{% trans "Tenants" %}</h1>
+    <a href="{% url 'tenants:create' %}"
+       class="flex items-center gap-1.5 bg-primary text-white text-sm font-semibold px-4 py-2 rounded-lg">
+      <i class="fa-solid fa-plus"></i>
+      {% trans "Add Tenant" %}
+    </a>
+  </div>
+
+  <!-- Search -->
+  <form method="get" class="relative">
+    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+      <i class="fa-solid fa-magnifying-glass text-slate-400 text-sm"></i>
+    </div>
+    <input type="text" name="q" value="{{ search_query }}"
+           placeholder="{% trans 'Search by name, username, room...' %}"
+           class="block w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm
+                  placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary shadow-sm">
+  </form>
+
+  <!-- Tenant list -->
+  {% if tenants %}
+  <div class="space-y-3">
+    {% for profile in tenants %}
+    <a href="{% url 'tenants:detail' profile.pk %}"
+       class="block bg-white rounded-xl border border-slate-100 shadow-sm p-4 hover:border-primary/40 transition-colors">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+          <i class="fa-solid fa-user text-lg"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="font-bold text-slate-800 truncate">
+            {{ profile.user.get_full_name|default:profile.user.username }}
+          </p>
+          <p class="text-xs text-slate-500 truncate">
+            {% if profile.active_room %}
+              {% trans "Room" %} {{ profile.active_room.number }}
+              · {{ profile.active_room.floor.building.name }}
+            {% else %}
+              <span class="text-amber-500">{% trans "No room assigned" %}</span>
+            {% endif %}
+          </p>
+        </div>
+        <div class="flex flex-col items-end gap-1 shrink-0">
+          {% if profile.phone %}
+          <p class="text-xs text-slate-400">{{ profile.phone }}</p>
+          {% endif %}
+          <i class="fa-solid fa-chevron-right text-slate-300 text-sm"></i>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-8 text-center">
+    <i class="fa-solid fa-users text-3xl text-slate-300 mb-3"></i>
+    {% if search_query %}
+    <p class="text-slate-500 font-medium">{% trans "No tenants found for" %} "{{ search_query }}"</p>
+    <a href="{% url 'tenants:list' %}" class="inline-block mt-2 text-primary text-sm">{% trans "Clear search" %}</a>
+    {% else %}
+    <p class="text-slate-500 font-medium">{% trans "No tenants yet." %}</p>
+    <a href="{% url 'tenants:create' %}" class="inline-block mt-3 text-primary text-sm font-semibold">
+      {% trans "+ Add your first tenant" %}
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

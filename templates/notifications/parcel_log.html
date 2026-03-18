@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Parcel Log" %} - DMS{% endblock %}
+{% block nav_parcels %}active{% endblock %}
+
+{% block content %}
+<div class="pb-24 lg:pb-6">
+    <!-- Header -->
+    <div class="flex items-center bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 sticky top-0 z-10">
+        <h2 class="text-lg font-bold leading-tight flex-1">{% trans "Log New Parcel" %}</h2>
+        <a href="{% url 'notifications:parcel_list' %}" class="text-sm text-primary font-medium">{% trans "View History" %}</a>
+    </div>
+
+    <div class="max-w-md mx-auto p-4">
+        <form method="post" enctype="multipart/form-data" class="space-y-6">
+            {% csrf_token %}
+
+            <div>
+                <h3 class="text-2xl font-bold">{% trans "Log Parcel" %}</h3>
+                <p class="text-slate-500 text-sm mt-1">{% trans "Fill in parcel details and notify the tenant via LINE." %}</p>
+            </div>
+
+            <!-- Photo capture -->
+            <div class="flex flex-col gap-3">
+                <p class="text-base font-semibold">{% trans "Parcel Photo" %}</p>
+                <label class="relative w-full aspect-video bg-slate-100 dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center gap-2 overflow-hidden cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                    <i class="fa-solid fa-camera text-primary text-4xl"></i>
+                    <span class="font-bold text-primary">{% trans "Take / Upload Photo" %}</span>
+                    <input type="file" name="photo" accept="image/*" capture="environment" class="hidden" required/>
+                </label>
+                {% if form.photo.errors %}<p class="text-xs text-red-500">{{ form.photo.errors.0 }}</p>{% endif %}
+            </div>
+
+            <!-- Room -->
+            <div class="flex flex-col gap-2">
+                <label class="text-base font-semibold">{% trans "Room Number" %}</label>
+                <div class="relative">
+                    <select name="room" class="form-select w-full rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 h-14 px-4 focus:ring-primary focus:border-primary" required>
+                        <option value="">{% trans "Select Room" %}</option>
+                        {% for room in rooms %}
+                        <option value="{{ room.pk }}" {% if form.room.value == room.pk|stringformat:"s" %}selected{% endif %}>
+                            {% trans "Room" %} {{ room.number }}
+                            {% with tenant=room.tenant_profiles.first %}
+                            {% if tenant %} - {{ tenant.user.get_full_name|default:tenant.user.username }}{% endif %}
+                            {% endwith %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500">
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </div>
+                </div>
+                {% if form.room.errors %}<p class="text-xs text-red-500">{{ form.room.errors.0 }}</p>{% endif %}
+            </div>
+
+            <!-- Carrier -->
+            <div class="flex flex-col gap-2">
+                <label class="text-base font-semibold">{% trans "Carrier Name" %}</label>
+                <div class="relative">
+                    <input type="text" name="carrier" value="{{ form.carrier.value|default:'' }}"
+                           class="form-input w-full rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 h-14 px-12 focus:ring-primary focus:border-primary placeholder:text-slate-400"
+                           placeholder="{% trans "e.g. Kerry, Flash, J&T" %}" required/>
+                    <div class="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
+                        <i class="fa-solid fa-truck"></i>
+                    </div>
+                </div>
+                {% if form.carrier.errors %}<p class="text-xs text-red-500">{{ form.carrier.errors.0 }}</p>{% endif %}
+            </div>
+
+            <!-- Notes -->
+            <div class="flex flex-col gap-2">
+                <label class="text-base font-semibold">{% trans "Notes (optional)" %}</label>
+                <textarea name="notes" rows="3"
+                          class="form-textarea w-full rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 focus:ring-primary focus:border-primary placeholder:text-slate-400 resize-none"
+                          placeholder="{% trans "Additional details..." %}">{{ form.notes.value|default:'' }}</textarea>
+            </div>
+
+            <!-- Submit -->
+            <div class="pt-2 pb-4">
+                <button type="submit" class="w-full bg-primary hover:bg-primary/90 text-white font-bold h-16 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg shadow-primary/20">
+                    <i class="fa-solid fa-bell"></i>
+                    <span class="text-lg">{% trans "Notify Tenant (LINE)" %}</span>
+                </button>
+                <p class="text-center text-xs text-slate-400 mt-4 flex items-center justify-center gap-1">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    {% trans "System will send LINE notification automatically" %}
+                </p>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

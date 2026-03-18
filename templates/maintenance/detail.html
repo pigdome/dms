@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Ticket" %} #{{ ticket.pk }} - DMS{% endblock %}
+{% block nav_maintenance %}text-primary{% endblock %}
+
+{% block content %}
+<div class="pb-32 lg:pb-6">
+    <!-- Header -->
+    <header class="sticky top-0 z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+        <div class="max-w-xl mx-auto flex items-center justify-between p-4">
+            <div class="flex items-center gap-3">
+                <a href="{% url 'maintenance:list' %}" class="flex items-center justify-center size-10 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </a>
+                <h1 class="text-lg font-bold">{% trans "Ticket Details" %}</h1>
+            </div>
+            <span class="text-sm text-slate-400">#{{ ticket.pk }}</span>
+        </div>
+    </header>
+
+    <main class="max-w-xl mx-auto">
+        <!-- Status Banner -->
+        <div class="p-4 border-b border-primary/20
+            {% if ticket.status == 'new' %}bg-blue-50/80 dark:bg-blue-900/20
+            {% elif ticket.status == 'in_progress' %}bg-primary/10 dark:bg-primary/20
+            {% elif ticket.status == 'waiting_parts' %}bg-yellow-50/80 dark:bg-yellow-900/20
+            {% else %}bg-emerald-50/80 dark:bg-emerald-900/20{% endif %}">
+            <div class="flex items-center justify-between">
+                <span class="font-semibold flex items-center gap-2
+                    {% if ticket.status == 'new' %}text-blue-600
+                    {% elif ticket.status == 'in_progress' %}text-primary
+                    {% elif ticket.status == 'waiting_parts' %}text-yellow-600
+                    {% else %}text-emerald-600{% endif %}">
+                    <i class="fa-solid fa-circle-info"></i>
+                    {% trans "Status" %}: {{ ticket.get_status_display }}
+                </span>
+                <span class="text-xs text-slate-500">{% trans "Updated" %} {{ ticket.updated_at|timesince }} {% trans "ago" %}</span>
+            </div>
+        </div>
+
+        <!-- Tenant/Room Info -->
+        <section class="p-4 bg-white dark:bg-slate-900 mt-2 border-y border-slate-200 dark:border-slate-800">
+            <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">{% trans "Room & Tenant Info" %}</h2>
+            <div class="flex items-center gap-4">
+                <div class="size-14 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center">
+                    <i class="fa-solid fa-user"></i>
+                </div>
+                <div class="flex-1">
+                    <h3 class="text-lg font-bold">
+                        {% with tenant=ticket.room.tenant_profiles.first %}
+                        {% if tenant %}{{ tenant.user.get_full_name|default:tenant.user.username }}
+                        {% else %}{% trans "No tenant" %}{% endif %}
+                        {% endwith %}
+                    </h3>
+                    <p class="text-slate-600 dark:text-slate-400">{% trans "Room" %} {{ ticket.room.number }} &bull; {{ ticket.room.floor.building.name }}</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-xs text-slate-400">ID: {{ ticket.pk }}</p>
+                    {% if ticket.reported_by %}
+                    <p class="text-xs text-slate-400 mt-1">{% trans "Reported by" %}: {{ ticket.reported_by.username }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        <!-- Issue Details -->
+        <section class="p-4 bg-white dark:bg-slate-900 mt-2 border-y border-slate-200 dark:border-slate-800">
+            <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">{% trans "Issue Details" %}</h2>
+            <p class="text-base leading-relaxed mb-4">{{ ticket.description }}</p>
+            {% if ticket.technician %}
+            <div class="flex items-center gap-2 text-sm">
+                <i class="fa-solid fa-helmet-safety"></i>
+                <span class="text-slate-600 dark:text-slate-400">{% trans "Technician" %}:</span>
+                <span class="font-semibold text-primary">{{ ticket.technician }}</span>
+            </div>
+            {% endif %}
+
+            {% if ticket.photos.exists %}
+            <div class="mt-4 space-y-2">
+                <h3 class="text-sm font-medium">{% trans "Photos" %}</h3>
+                <div class="grid grid-cols-2 gap-2">
+                    {% for photo in ticket.photos.all %}
+                    <div class="aspect-square rounded-xl bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                        <img src="{{ photo.photo.url }}" alt="{{ photo.get_stage_display }}" class="w-full h-full object-cover"/>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </section>
+
+        <!-- Timeline -->
+        <section class="p-4 bg-white dark:bg-slate-900 mt-2 border-y border-slate-200 dark:border-slate-800">
+            <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-6">{% trans "Status Timeline" %}</h2>
+            <div class="relative flex flex-col gap-6 ml-2">
+                <div class="absolute left-[11px] top-2 bottom-2 w-0.5 bg-slate-200 dark:bg-slate-800"></div>
+                {% for history in ticket.status_history.all %}
+                <div class="flex gap-4 relative">
+                    <div class="size-6 rounded-full bg-primary flex items-center justify-center z-10">
+                        <i class="fa-solid fa-check"></i>
+                    </div>
+                    <div>
+                        <p class="font-bold text-sm">{{ history.get_status_display }}</p>
+                        <p class="text-xs text-slate-500">{{ history.changed_at|date:"d M Y" }} &bull; {{ history.changed_at|time:"H:i" }}</p>
+                        {% if history.changed_by %}
+                        <p class="text-xs text-primary mt-0.5">{{ history.changed_by.username }}</p>
+                        {% endif %}
+                        {% if history.note %}
+                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-1 italic">{{ history.note }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- Update Status Form -->
+        {% if ticket.status != 'completed' %}
+        <section class="p-4 bg-white dark:bg-slate-900 mt-2 border-y border-slate-200 dark:border-slate-800">
+            <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">{% trans "Update Status" %}</h2>
+            <form method="post" action="{% url 'maintenance:update_status' ticket.pk %}">
+                {% csrf_token %}
+                <div class="space-y-3">
+                    <select name="status" class="w-full h-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none">
+                        {% for val, label in status_choices %}
+                        <option value="{{ val }}" {% if ticket.status == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" name="technician" value="{{ ticket.technician }}"
+                           placeholder="{% trans "Technician name" %}"
+                           class="w-full h-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"/>
+                    <textarea name="note" rows="2" placeholder="{% trans "Note (optional)" %}"
+                              class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none resize-none"></textarea>
+                    <button type="submit" class="w-full bg-primary text-white font-bold h-12 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/20">
+                        <i class="fa-solid fa-rotate"></i>
+                        {% trans "Update Status" %}
+                    </button>
+                </div>
+            </form>
+        </section>
+        {% endif %}
+    </main>
+</div>
+{% endblock %}

@@ -1,0 +1,187 @@
+# DMS — Dormitory Management System
+
+## Project Overview
+ระบบบริหารจัดการหอพัก Multi-Tenant SaaS
+ดู spec เต็มได้ที่ [instruction.md](instruction.md)
+
+---
+
+## Tech Stack
+- **Backend:** Django + Django Admin (theme: unfold)
+- **Frontend:** Django Templates (Owner/Staff web + Tenant portal)
+- **Database:** PostgreSQL
+- **Cache/Queue:** Redis
+- **File Storage:** Local filesystem
+- **Hosting:** Docker + Docker Compose
+- **Payment:** TMR Payment Gateway (PromptPay QR + Webhook)
+- **Notifications:** LINE Messaging API
+
+---
+
+## Architecture Decisions
+- **Multi-Tenancy:** `tenant_id` ต้องอยู่ใน **ทุก Model** ที่มีข้อมูลของ Owner — ห้าม query ข้าม tenant โดยเด็ดขาด
+- **Django Apps:** แยก app ตาม domain (billing, rooms, tenants, maintenance, notifications, etc.)
+- **Background Jobs:** ใช้ Redis + Celery (หรือ django-rq) สำหรับ Dunning, LINE notifications
+- **Webhook:** Payment webhook ต้องรองรับ Idempotency (ป้องกัน double-process)
+
+---
+
+## User Roles
+| Role | คำอธิบาย |
+|---|---|
+| `superadmin` | System owner — จัดการ Owner accounts |
+| `owner` | เจ้าของหอพัก — จัดการหอ/ตึก/ห้อง/ผู้เช่าของตัวเอง |
+| `staff` | พนักงานหอ — สิทธิ์จำกัดตามที่ Owner กำหนด |
+| `tenant` | ผู้เช่า — เข้าผ่าน tenant portal (`/tenant/`) |
+
+---
+
+## Coding Conventions
+- ใช้ภาษา **English** สำหรับ code, variable names, comments, model fields
+- Django template i18n-ready: ใช้ `{% trans %}` สำหรับ user-facing text ทุกจุด
+- Model ทุกตัวที่ผูกกับ Owner ต้องมี `tenant` ForeignKey
+- ใช้ Django ORM — ห้าม raw SQL ยกเว้นจำเป็นจริงๆ
+- View ทุกตัวต้อง enforce tenant scope (ใช้ mixin หรือ queryset filter ที่ base level)
+- เขียน test สำหรับ billing calculation และ payment webhook เสมอ
+
+---
+
+## Key Files & Structure
+```
+dms/
+├── CLAUDE.md
+├── instruction.md
+├── design/                    # UI mockups (reference only, do not modify)
+│   └── stitch/                # complete screen designs (12 screens)
+├── docker-compose.yml
+├── Dockerfile
+├── .env / .env.example
+├── requirements.txt
+├── manage.py
+├── config/                    # Django project settings
+│   ├── settings.py
+│   ├── urls.py
+│   └── celery.py
+└── apps/
+    ├── core/          # Dormitory (tenant), CustomUser (role), ActivityLog
+    ├── billing/       # Bill, Payment, TMR webhook, billing settings
+    ├── rooms/         # Building, Floor, Room, MeterReading
+    ├── tenants/       # TenantProfile, Lease, DigitalVault
+    ├── maintenance/   # MaintenanceTicket, TicketStatusHistory
+    ├── notifications/ # LineMessage, Parcel, DunningSchedule, Broadcast
+    └── dashboard/     # views only (aggregates from other apps)
+```
+
+## UI Screens (design/stitch/)
+Reference สำหรับ frontend agent — ทุกหน้ามี `code.html` (Tailwind) และ `screen.png`:
+
+| Screen | Path | User |
+|---|---|---|
+| Owner Dashboard | `owner_dashboard/` | Owner |
+| Room Management | `room_management_owner/` | Owner |
+| Meter Reading Wizard | `meter_reading_wizard/` | Staff |
+| Maintenance Ticket List | `maintenance_tickets_owner/` | Owner/Staff |
+| Maintenance Ticket Detail | `maintenance_ticket_detail/` | Owner/Staff |
+| Parcel Logging | `parcel_logging_staff/` | Staff |
+| Tenant Profile & History | `tenant_profile_history/` | Owner |
+| Tenant Portal (Home) | `tenant_view_line_mini_app/` | Tenant |
+| Add/Import Tenants | `add_import_tenants/` | Owner |
+| Broadcast Creator | `broadcast_creator/` | Owner |
+| Payment & Billing Settings | `payment_billing_settings/` | Owner |
+| Setup Wizard | `setup_wizard_owner/` | Owner (onboarding) |
+
+---
+
+## Core Data Models (derived from design screens)
+
+```
+core:       Dormitory(name, address, photo, location), CustomUser(role, dormitory_fk), ActivityLog
+rooms:      Building(dormitory_fk, name), Floor(building_fk, number), Room(floor_fk, number, status*)
+            MeterReading(room_fk, water_prev, water_curr, water_photo, elec_prev, elec_curr, elec_photo, recorded_by, date)
+billing:    BillingSettings(dormitory_fk, bill_day, grace_days, elec_rate, water_rate, tmr_api_key, tmr_secret, dunning_enabled)
+            Bill(room_fk, month, base_rent, water_amt, elec_amt, total, due_date, status*)
+            Payment(bill_fk, amount, tmr_ref, webhook_payload, idempotency_key, paid_at)
+tenants:    TenantProfile(user_fk, room_fk, phone, line_id, id_card_no*)
+            Lease(tenant_fk, start_date, end_date, document_file)
+            DigitalVault(tenant_fk, file_type*, file)
+maintenance:MaintenanceTicket(room_fk, reported_by, description, status*, technician)
+            TicketPhoto(ticket_fk, photo, stage*)
+            TicketStatusHistory(ticket_fk, status, changed_by, changed_at, note)
+notify:     Parcel(room_fk, photo, carrier, notes, notified_at, logged_by)
+            Broadcast(dormitory_fk, audience_type*, title, body, attachment, sent_at)
+            DunningLog(bill_fk, trigger_type*, sent_at)
+
+* Room.status:    occupied | vacant | cleaning | maintenance
+* Bill.status:    draft | sent | paid | overdue
+* file_type:      id_card | room_photo | contract
+* TicketPhoto.stage: issue | completion
+* Broadcast.audience_type: all | building | floor
+* DunningLog.trigger_type: pre_7d | pre_3d | pre_1d | due | post_1d | post_7d | post_15d
+* TenantProfile.id_card_no: encrypted at rest (PDPA)
+```
+
+---
+
+## Critical Business Rules
+1. **ห้ามข้าม tenant** — query ทุกอันต้อง filter ด้วย `tenant_id` ของ request user เสมอ
+2. **Payment Idempotency** — ก่อน update bill status ต้อง check ว่า webhook นี้ถูก process ไปแล้วหรือยัง
+3. **Billing cycle** — กำหนดต่อหอพัก, รองรับ pro-rate เมื่อผู้เช่าเข้า/ออกกลางเดือน
+4. **Dunning schedule** — 7/3/1 วันก่อนครบ, วันครบกำหนด, +1/+7/+15 วันหลังค้าง
+5. **Activity Log** — บันทึกทุก action สำคัญ (ใคร, ทำอะไร, เมื่อไหร่, tenant ใด)
+
+---
+
+## Team Agents
+
+ใช้ sub-agents เหล่านี้สำหรับงานที่เฉพาะทาง:
+
+### `model-architect`
+**รับผิดชอบ:** Django models, migrations, database schema
+- ออกแบบ/แก้ไข models และ relationships
+- เขียน migrations และ data migrations
+- ตรวจสอบ tenant isolation ใน schema
+- **ห้ามแตะ:** views, templates, business logic
+
+### `billing-engine`
+**รับผิดชอบ:** ระบบการเงินทั้งหมด
+- `apps/billing/` — bill generation, payment status
+- TMR Webhook handler + Idempotency logic
+- Pro-rate calculation, billing cycle
+- Export CSV report
+- **ต้องเขียน test ทุกครั้งที่แก้ calculation**
+
+### `line-integration`
+**รับผิดชอบ:** LINE Messaging API (notifications เท่านั้น — ไม่มี LIFF)
+- `apps/notifications/` — LINE Messaging API, push messages
+- Dunning scheduler (Celery tasks)
+- Digital receipt message format
+
+### `frontend`
+**รับผิดชอบ:** Django templates สำหรับ Owner/Staff
+- `apps/*/templates/` — HTML, CSS, JS
+- Django Unfold admin customization
+- Owner Dashboard UI
+- i18n: ทุก user-facing string ต้องใช้ `{% trans %}`
+- **ห้ามแตะ:** models, views business logic
+
+### `devops`
+**รับผิดชอบ:** infrastructure และ environment
+- `docker-compose.yml`, `Dockerfile`
+- Environment variables, secrets management
+- Redis, PostgreSQL configuration
+- Local file storage setup
+
+### `qa`
+**รับผิดชอบ:** quality และ security
+- เขียนและรัน tests (`pytest` / `django test`)
+- ตรวจสอบ tenant isolation leak
+- ตรวจสอบ SQL injection, XSS, IDOR
+- Review billing calculation edge cases
+- ตรวจสอบว่าทุก view มี authentication + permission check
+
+---
+
+## Out of Scope
+- ระบบบัญชี/ภาษีเต็มรูปแบบ
+- IoT / Hardware integration
+- Multi-language UI (v1 — เตรียม i18n ไว้แต่ไม่ implement)

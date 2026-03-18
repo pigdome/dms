@@ -1,0 +1,144 @@
+import hashlib
+import hmac
+import json
+
+from django.conf import settings as django_settings
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import redirect, render
+from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.utils.translation import gettext_lazy as _
+from django.views import View
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+
+from apps.billing.models import Bill, BillingSettings, Payment
+
+
+def staff_required(view_func):
+    from functools import wraps
+
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('core:login')
+        if request.user.role == 'tenant':
+            return redirect('tenant:home')
+        return view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
+@method_decorator([login_required, staff_required], name='dispatch')
+class BillingSettingsView(View):
+    def _get_or_create_settings(self, request):
+        dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
+        if not dorm:
+            return None
+        settings, _ = BillingSettings.objects.get_or_create(dormitory=dorm)
+        return settings
+
+    def get(self, request):
+        settings = self._get_or_create_settings(request)
+        if not settings:
+            messages.error(request, _('No dormitory associated with your account.'))
+            return redirect('dashboard:index')
+        return render(request, 'billing/settings.html', {
+            'settings': settings,
+            'bill_day_choices': BillingSettings.BillDay.choices,
+        })
+
+    def post(self, request):
+        settings = self._get_or_create_settings(request)
+        if not settings:
+            messages.error(request, _('No dormitory associated with your account.'))
+            return redirect('dashboard:index')
+
+        data = request.POST
+        settings.tmr_api_key = data.get('tmr_api_key', '').strip()
+        settings.tmr_secret = data.get('tmr_secret', '').strip()
+
+        bill_day = data.get('bill_day', '1')
+        valid_days = [str(d[0]) for d in BillingSettings.BillDay.choices]
+        if bill_day in valid_days:
+            settings.bill_day = int(bill_day)
+
+        try:
+            settings.grace_days = max(0, int(data.get('grace_days', 5) or 5))
+        except (ValueError, TypeError):
+            settings.grace_days = 5
+
+        try:
+            settings.elec_rate = float(data.get('elec_rate', 7.00) or 7.00)
+        except (ValueError, TypeError):
+            settings.elec_rate = 7.00
+
+        try:
+            settings.water_rate = float(data.get('water_rate', 18.00) or 18.00)
+        except (ValueError, TypeError):
+            settings.water_rate = 18.00
+
+        settings.dunning_enabled = bool(data.get('dunning_enabled'))
+        settings.save()
+
+        messages.success(request, _('Billing settings saved successfully.'))
+        return redirect('billing:settings')
+
+
+@csrf_exempt
+@require_POST
+def tmr_webhook(request):
+    """
+    Receive TMR payment gateway webhook, verify HMAC signature, and mark the
+    matching bill as paid.  Fully idempotent: duplicate webhooks return 200.
+    """
+    body = request.body
+
+    # --- Signature verification ---
+    secret = django_settings.TMR_WEBHOOK_SECRET
+    if secret:
+        sig = request.META.get('HTTP_X_TMR_SIGNATURE', '')
+        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return HttpResponse('Invalid signature', status=403)
+
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return HttpResponse('Bad JSON', status=400)
+
+    # TMR sends: ref (unique transaction id), order_id (invoice_number), amount
+    idempotency_key = data.get('ref') or data.get('transaction_id', '')
+    invoice_number = data.get('order_id') or data.get('invoice_number', '')
+
+    if not idempotency_key or not invoice_number:
+        return HttpResponse('Missing ref or order_id', status=400)
+
+    # --- Idempotency check ---
+    if Payment.objects.filter(idempotency_key=idempotency_key).exists():
+        return JsonResponse({'status': 'already_processed'})
+
+    try:
+        bill = Bill.objects.select_for_update().get(invoice_number=invoice_number)
+    except Bill.DoesNotExist:
+        return HttpResponse('Bill not found', status=404)
+
+    if bill.status == Bill.Status.PAID:
+        return JsonResponse({'status': 'already_paid'})
+
+    from django.db import transaction as db_transaction
+    with db_transaction.atomic():
+        Payment.objects.create(
+            bill=bill,
+            amount=data.get('amount', bill.total),
+            tmr_ref=data.get('tmr_ref', idempotency_key),
+            idempotency_key=idempotency_key,
+            webhook_payload=data,
+            paid_at=timezone.now(),
+        )
+        bill.status = Bill.Status.PAID
+        bill.save(update_fields=['status', 'updated_at'])
+
+    return JsonResponse({'status': 'ok'})

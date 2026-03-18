@@ -1,0 +1,230 @@
+{% extends "base_tenant.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "My Home" %} - DMS{% endblock %}
+
+{% block nav_home %}text-primary{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+
+  {% if not profile %}
+  <div class="bg-amber-50 border border-amber-200 rounded-xl p-5 text-center">
+    <i class="fa-solid fa-triangle-exclamation text-amber-500 text-3xl mb-2"></i>
+    <p class="font-semibold text-amber-800">{% trans "No profile found" %}</p>
+    <p class="text-sm text-amber-600 mt-1">{% trans "Please contact your dormitory manager to set up your tenant profile." %}</p>
+  </div>
+  {% else %}
+
+  <!-- Room info card -->
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+        <i class="fa-solid fa-door-open text-primary text-lg"></i>
+      </div>
+      <div>
+        <p class="text-xs text-slate-400 uppercase tracking-wider">{% trans "Your Room" %}</p>
+        <p class="font-bold text-lg leading-tight">
+          {% if profile.room %}
+            {% trans "Room" %} {{ profile.room.number }}
+          {% else %}
+            {% trans "No room assigned" %}
+          {% endif %}
+        </p>
+      </div>
+    </div>
+    {% if profile.room %}
+    <div class="grid grid-cols-2 gap-3">
+      <div class="bg-slate-50 rounded-xl p-3">
+        <p class="text-xs text-slate-400">{% trans "Building" %}</p>
+        <p class="font-semibold text-sm mt-0.5">{{ profile.room.floor.building.name }}</p>
+      </div>
+      <div class="bg-slate-50 rounded-xl p-3">
+        <p class="text-xs text-slate-400">{% trans "Floor" %}</p>
+        <p class="font-semibold text-sm mt-0.5">{{ profile.room.floor.number }}</p>
+      </div>
+      <div class="bg-slate-50 rounded-xl p-3">
+        <p class="text-xs text-slate-400">{% trans "Monthly Rent" %}</p>
+        <p class="font-semibold text-sm mt-0.5">฿{{ profile.room.base_rent|floatformat:0 }}</p>
+      </div>
+      <div class="bg-slate-50 rounded-xl p-3">
+        <p class="text-xs text-slate-400">{% trans "Status" %}</p>
+        <p class="font-semibold text-sm mt-0.5 capitalize">{{ profile.room.get_status_display }}</p>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Current bill card -->
+  {% if current_bill %}
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-receipt text-primary"></i>
+        <span class="font-semibold">{% trans "Current Bill" %}</span>
+      </div>
+      <span class="px-2.5 py-1 rounded-full text-xs font-semibold
+        {% if current_bill.status == 'paid' %}bg-emerald-100 text-emerald-700
+        {% elif current_bill.status == 'overdue' %}bg-red-100 text-red-700
+        {% elif current_bill.status == 'sent' %}bg-blue-100 text-blue-700
+        {% else %}bg-slate-100 text-slate-600{% endif %}">
+        {{ current_bill.get_status_display }}
+      </span>
+    </div>
+    <div class="space-y-2 text-sm">
+      <div class="flex justify-between">
+        <span class="text-slate-500">{% trans "Month" %}</span>
+        <span class="font-medium">{{ current_bill.month|date:"F Y" }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500">{% trans "Base Rent" %}</span>
+        <span>฿{{ current_bill.base_rent|floatformat:0 }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500"><i class="fa-solid fa-bolt text-amber-500 text-xs mr-1"></i>{% trans "Electricity" %}</span>
+        <span>฿{{ current_bill.elec_amt|floatformat:0 }}</span>
+      </div>
+      <div class="flex justify-between">
+        <span class="text-slate-500"><i class="fa-solid fa-droplet text-blue-500 text-xs mr-1"></i>{% trans "Water" %}</span>
+        <span>฿{{ current_bill.water_amt|floatformat:0 }}</span>
+      </div>
+      <div class="border-t border-slate-100 pt-2 flex justify-between font-bold text-base">
+        <span>{% trans "Total" %}</span>
+        <span class="text-primary">฿{{ current_bill.total|floatformat:0 }}</span>
+      </div>
+    </div>
+    {% if current_bill.due_date %}
+    <div class="mt-3 flex items-center gap-1.5 text-xs text-slate-400">
+      <i class="fa-regular fa-calendar"></i>
+      {% trans "Due" %}: {{ current_bill.due_date|date:"d M Y" }}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Meter readings -->
+  {% if latest_meter %}
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+    <div class="flex items-center gap-2 mb-3">
+      <i class="fa-solid fa-gauge-high text-primary"></i>
+      <span class="font-semibold">{% trans "Latest Meter Reading" %}</span>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div class="bg-amber-50 rounded-xl p-3">
+        <div class="flex items-center gap-1.5 mb-1">
+          <i class="fa-solid fa-bolt text-amber-500 text-xs"></i>
+          <span class="text-xs text-slate-500">{% trans "Electricity" %}</span>
+        </div>
+        <p class="font-bold text-sm">{{ latest_meter.elec_curr }} <span class="font-normal text-xs text-slate-400">units</span></p>
+        <p class="text-xs text-slate-400">{% trans "Used" %}: {{ latest_meter.elec_curr|add:"-"|add:latest_meter.elec_prev }}</p>
+      </div>
+      <div class="bg-blue-50 rounded-xl p-3">
+        <div class="flex items-center gap-1.5 mb-1">
+          <i class="fa-solid fa-droplet text-blue-500 text-xs"></i>
+          <span class="text-xs text-slate-500">{% trans "Water" %}</span>
+        </div>
+        <p class="font-bold text-sm">{{ latest_meter.water_curr }} <span class="font-normal text-xs text-slate-400">units</span></p>
+        <p class="text-xs text-slate-400">{% trans "Used" %}: {{ latest_meter.water_curr|add:"-"|add:latest_meter.water_prev }}</p>
+      </div>
+    </div>
+    <p class="text-xs text-slate-400 mt-2"><i class="fa-regular fa-calendar mr-1"></i>{{ latest_meter.date|date:"d M Y" }}</p>
+  </div>
+  {% endif %}
+
+  <!-- Parcel notification -->
+  {% if pending_parcel %}
+  <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-5">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
+        <i class="fa-solid fa-box text-emerald-600 text-lg"></i>
+      </div>
+      <div>
+        <p class="font-semibold text-emerald-800">{% trans "Parcel waiting for you!" %}</p>
+        <p class="text-sm text-emerald-600 mt-0.5">
+          {% if pending_parcel.carrier %}{{ pending_parcel.carrier }} — {% endif %}
+          {% trans "Please collect at the reception" %}
+        </p>
+        <p class="text-xs text-emerald-500 mt-1"><i class="fa-regular fa-clock mr-1"></i>{{ pending_parcel.notified_at|date:"d M Y H:i" }}</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Maintenance tickets -->
+  {% if maintenance_tickets %}
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-screwdriver-wrench text-primary"></i>
+        <span class="font-semibold">{% trans "Maintenance Requests" %}</span>
+      </div>
+      <a href="{% url 'tenant:maintenance' %}" class="text-xs text-primary font-medium">
+        <i class="fa-solid fa-plus mr-1"></i>{% trans "New" %}
+      </a>
+    </div>
+    <div class="space-y-2">
+      {% for ticket in maintenance_tickets %}
+      <div class="flex items-center gap-3 py-2 border-b border-slate-50 last:border-0">
+        <span class="w-2 h-2 rounded-full flex-shrink-0
+          {% if ticket.status == 'completed' %}bg-emerald-400
+          {% elif ticket.status == 'in_progress' %}bg-blue-400
+          {% elif ticket.status == 'waiting_parts' %}bg-amber-400
+          {% else %}bg-slate-300{% endif %}"></span>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium truncate">{{ ticket.description|truncatechars:50 }}</p>
+          <p class="text-xs text-slate-400">{{ ticket.created_at|date:"d M Y" }}</p>
+        </div>
+        <span class="text-xs px-2 py-0.5 rounded-full
+          {% if ticket.status == 'completed' %}bg-emerald-100 text-emerald-700
+          {% elif ticket.status == 'in_progress' %}bg-blue-100 text-blue-700
+          {% elif ticket.status == 'waiting_parts' %}bg-amber-100 text-amber-700
+          {% else %}bg-slate-100 text-slate-600{% endif %}">
+          {{ ticket.get_status_display }}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="text-center py-6">
+    <a href="{% url 'tenant:maintenance' %}"
+       class="inline-flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-medium text-sm shadow-sm">
+      <i class="fa-solid fa-hammer"></i>
+      {% trans "Submit Repair Request" %}
+    </a>
+  </div>
+  {% endif %}
+
+  <!-- Profile info -->
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+    <div class="flex items-center gap-2 mb-3">
+      <i class="fa-solid fa-user text-primary"></i>
+      <span class="font-semibold">{% trans "My Profile" %}</span>
+    </div>
+    <div class="space-y-2 text-sm">
+      {% if profile.phone %}
+      <div class="flex items-center gap-2 text-slate-600">
+        <i class="fa-solid fa-phone text-slate-400 w-4"></i>
+        {{ profile.phone }}
+      </div>
+      {% endif %}
+      {% if profile.line_id %}
+      <div class="flex items-center gap-2 text-slate-600">
+        <i class="fa-solid fa-comment text-slate-400 w-4"></i>
+        {{ profile.line_id }}
+      </div>
+      {% endif %}
+      {% if leases %}
+      <div class="flex items-center gap-2 text-slate-600">
+        <i class="fa-regular fa-calendar text-slate-400 w-4"></i>
+        {% with lease=leases.0 %}
+        {{ lease.start_date|date:"d M Y" }} — {% if lease.end_date %}{{ lease.end_date|date:"d M Y" }}{% else %}{% trans "Ongoing" %}{% endif %}
+        {% endwith %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}

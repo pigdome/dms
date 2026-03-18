@@ -1,0 +1,125 @@
+from decimal import Decimal
+from datetime import date, timedelta
+import calendar
+
+
+def calculate_bill(base_rent, water_units, elec_units, water_rate, elec_rate):
+    """Calculate total bill amount."""
+    water_amt = Decimal(str(water_units)) * Decimal(str(water_rate))
+    elec_amt = Decimal(str(elec_units)) * Decimal(str(elec_rate))
+    total = Decimal(str(base_rent)) + water_amt + elec_amt
+    return {
+        'base_rent': Decimal(str(base_rent)),
+        'water_amt': water_amt,
+        'elec_amt': elec_amt,
+        'total': total,
+    }
+
+
+def calculate_prorated_rent(base_rent, move_in_date, billing_month):
+    """Calculate pro-rated rent for partial month occupancy."""
+    days_in_month = calendar.monthrange(billing_month.year, billing_month.month)[1]
+    # First day of next month
+    if billing_month.month == 12:
+        month_end = date(billing_month.year + 1, 1, 1)
+    else:
+        month_end = date(billing_month.year, billing_month.month + 1, 1)
+    month_start = date(billing_month.year, billing_month.month, 1)
+
+    # Days occupied in the billing month
+    occupied_from = max(move_in_date, month_start)
+    days_occupied = (month_end - occupied_from).days
+    days_occupied = max(0, min(days_occupied, days_in_month))
+
+    prorated = Decimal(str(base_rent)) * Decimal(days_occupied) / Decimal(days_in_month)
+    return prorated.quantize(Decimal('0.01'))
+
+
+def generate_bills_for_dormitory(dormitory, month: date) -> list:
+    """
+    Create draft bills for all occupied rooms in *dormitory* for *month*.
+
+    - Skips rooms that already have a bill for this month.
+    - Uses the latest MeterReading recorded in that month for elec/water amounts.
+    - Returns the list of newly created Bill objects.
+    """
+    from django.db import transaction
+    from apps.billing.models import Bill, BillingSettings
+    from apps.rooms.models import MeterReading, Room
+
+    try:
+        settings = dormitory.billing_settings
+    except BillingSettings.DoesNotExist:
+        return []
+
+    bill_date = date(month.year, month.month, settings.bill_day)
+    due_date = bill_date + timedelta(days=settings.grace_days)
+
+    rooms = Room.objects.filter(
+        floor__building__dormitory=dormitory,
+        status=Room.Status.OCCUPIED,
+    )
+
+    created = []
+    for room in rooms:
+        if Bill.objects.filter(room=room, month=month).exists():
+            continue
+
+        meter = (
+            MeterReading.objects
+            .filter(room=room, reading_date__year=month.year, reading_date__month=month.month)
+            .order_by('-reading_date')
+            .first()
+        )
+
+        water_amt = Decimal('0')
+        elec_amt = Decimal('0')
+        if meter:
+            water_amt = Decimal(str(meter.water_units)) * settings.water_rate
+            elec_amt = Decimal(str(meter.elec_units)) * settings.elec_rate
+
+        total = room.base_rent + water_amt + elec_amt
+
+        with transaction.atomic():
+            bill = Bill.objects.create(
+                room=room,
+                month=month,
+                base_rent=room.base_rent,
+                water_amt=water_amt,
+                elec_amt=elec_amt,
+                total=total,
+                due_date=due_date,
+                status=Bill.Status.DRAFT,
+            )
+        created.append(bill)
+
+    return created
+
+
+def mark_overdue_bills() -> int:
+    """
+    Mark all sent/draft bills whose due_date has passed as overdue.
+    Returns the number of bills updated.
+    """
+    from django.utils import timezone
+    from apps.billing.models import Bill
+
+    today = timezone.localdate()
+    return Bill.objects.filter(
+        status__in=[Bill.Status.DRAFT, Bill.Status.SENT],
+        due_date__lt=today,
+    ).update(status=Bill.Status.OVERDUE)
+
+
+def get_dunning_trigger_dates(due_date):
+    """Return all dunning trigger dates for a bill."""
+    from datetime import timedelta
+    return {
+        'pre_7d': due_date - timedelta(days=7),
+        'pre_3d': due_date - timedelta(days=3),
+        'pre_1d': due_date - timedelta(days=1),
+        'due': due_date,
+        'post_1d': due_date + timedelta(days=1),
+        'post_7d': due_date + timedelta(days=7),
+        'post_15d': due_date + timedelta(days=15),
+    }

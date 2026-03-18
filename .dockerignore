@@ -1,0 +1,56 @@
+# Version control
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Django runtime dirs (mounted as volumes in production)
+media/
+staticfiles/
+
+# Docker volumes
+data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+e2e_results.txt
+screenshots/
+
+# Docs / design (not needed in image)
+design/
+instruction.md
+
+# Misc
+*.bak
+*.tmp
+*.log
+gunicorn.ctl

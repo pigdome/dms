@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Maintenance" %} - DMS{% endblock %}
+{% block nav_maintenance %}text-primary{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+
+  <!-- Header row -->
+  <div class="flex items-center justify-between">
+    <h1 class="text-lg font-bold text-slate-800">{% trans "Maintenance" %}</h1>
+    <a href="{% url 'maintenance:create' %}"
+       class="flex items-center gap-1.5 bg-primary text-white text-sm font-semibold px-4 py-2 rounded-lg">
+      <i class="fa-solid fa-plus"></i>
+      {% trans "New Ticket" %}
+    </a>
+  </div>
+
+  <!-- Status filter tabs -->
+  <div class="flex gap-1 overflow-x-auto pb-1 no-scrollbar border-b border-slate-200">
+    <a href="{% url 'maintenance:list' %}{% if search_query %}?q={{ search_query }}{% endif %}"
+       class="flex-shrink-0 px-3 py-2.5 text-sm font-medium border-b-2
+              {% if not status_filter %}border-primary text-primary{% else %}border-transparent text-slate-500{% endif %}">
+      {% trans "All" %}
+    </a>
+    <a href="?status=new{% if search_query %}&q={{ search_query }}{% endif %}"
+       class="flex-shrink-0 px-3 py-2.5 text-sm font-medium border-b-2
+              {% if status_filter == 'new' %}border-primary text-primary{% else %}border-transparent text-slate-500{% endif %}">
+      {% trans "New" %}
+    </a>
+    <a href="?status=in_progress{% if search_query %}&q={{ search_query }}{% endif %}"
+       class="flex-shrink-0 px-3 py-2.5 text-sm font-medium border-b-2
+              {% if status_filter == 'in_progress' %}border-primary text-primary{% else %}border-transparent text-slate-500{% endif %}">
+      {% trans "In Progress" %}
+    </a>
+    <a href="?status=waiting_parts{% if search_query %}&q={{ search_query }}{% endif %}"
+       class="flex-shrink-0 px-3 py-2.5 text-sm font-medium border-b-2
+              {% if status_filter == 'waiting_parts' %}border-primary text-primary{% else %}border-transparent text-slate-500{% endif %}">
+      {% trans "Waiting Parts" %}
+    </a>
+    <a href="?status=completed{% if search_query %}&q={{ search_query }}{% endif %}"
+       class="flex-shrink-0 px-3 py-2.5 text-sm font-medium border-b-2
+              {% if status_filter == 'completed' %}border-primary text-primary{% else %}border-transparent text-slate-500{% endif %}">
+      {% trans "Completed" %}
+    </a>
+  </div>
+
+  <!-- Search -->
+  <form method="get" class="relative">
+    {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+      <i class="fa-solid fa-magnifying-glass text-slate-400 text-sm"></i>
+    </div>
+    <input type="text" name="q" value="{{ search_query }}"
+           placeholder="{% trans 'Search room or description...' %}"
+           class="block w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm
+                  placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary shadow-sm">
+  </form>
+
+  <!-- Ticket list -->
+  {% if tickets %}
+  <div class="space-y-3">
+    {% for ticket in tickets %}
+    <a href="{% url 'maintenance:detail' ticket.pk %}"
+       class="block bg-white rounded-xl border border-slate-100 shadow-sm p-4 hover:border-primary/40 transition-colors
+              {% if ticket.status == 'completed' %}opacity-75{% endif %}">
+      <div class="flex items-start gap-3">
+        <!-- Photo or icon -->
+        {% with ticket.photos.first as photo %}
+        {% if photo %}
+        <div class="w-20 h-20 rounded-lg bg-cover bg-center shrink-0"
+             style="background-image: url('{{ photo.photo.url }}')"></div>
+        {% else %}
+        <div class="w-20 h-20 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+          <i class="fa-solid fa-screwdriver-wrench text-2xl text-slate-300"></i>
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        <div class="flex-1 min-w-0">
+          <div class="flex items-start justify-between gap-2">
+            <h3 class="font-bold text-slate-800 text-sm">
+              {% trans "Room" %} {{ ticket.room.number }} · {{ ticket.room.floor.building.name }}
+            </h3>
+            <span class="shrink-0 px-2 py-0.5 rounded-full text-xs font-medium
+              {% if ticket.status == 'new' %}bg-blue-100 text-blue-700
+              {% elif ticket.status == 'in_progress' %}bg-orange-100 text-orange-700
+              {% elif ticket.status == 'waiting_parts' %}bg-yellow-100 text-yellow-700
+              {% else %}bg-green-100 text-green-700{% endif %}">
+              {{ ticket.get_status_display }}
+            </span>
+          </div>
+          <p class="text-sm text-slate-500 mt-1 line-clamp-2">{{ ticket.description }}</p>
+          <div class="flex items-center gap-1.5 mt-2">
+            <i class="fa-regular fa-calendar text-slate-400 text-xs"></i>
+            <p class="text-xs text-slate-400">{{ ticket.created_at|date:"d M Y · H:i" }}</p>
+          </div>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-8 text-center">
+    <i class="fa-solid fa-screwdriver-wrench text-3xl text-slate-300 mb-3"></i>
+    {% if search_query or status_filter %}
+    <p class="text-slate-500 font-medium">{% trans "No tickets match your filter." %}</p>
+    <a href="{% url 'maintenance:list' %}" class="inline-block mt-2 text-primary text-sm">{% trans "Clear filter" %}</a>
+    {% else %}
+    <p class="text-slate-500 font-medium">{% trans "No maintenance tickets yet." %}</p>
+    <a href="{% url 'maintenance:create' %}" class="inline-block mt-3 text-primary text-sm font-semibold">
+      {% trans "+ Create first ticket" %}
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base_tenant.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "My Bills" %} - DMS{% endblock %}
+
+{% block nav_bills %}text-primary{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-3">
+  <h2 class="font-bold text-lg">{% trans "Bill History" %}</h2>
+
+  {% if not all_bills %}
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 text-center">
+    <i class="fa-solid fa-receipt text-slate-300 text-4xl mb-3"></i>
+    <p class="text-slate-500 text-sm">{% trans "No bills found." %}</p>
+  </div>
+  {% else %}
+  {% for bill in all_bills %}
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+    <div class="flex items-center justify-between mb-2">
+      <div>
+        <p class="font-semibold text-sm">{{ bill.month|date:"F Y" }}</p>
+        <p class="text-xs text-slate-400">{% trans "Room" %} {{ bill.room.number }}</p>
+      </div>
+      <span class="px-2.5 py-1 rounded-full text-xs font-semibold
+        {% if bill.status == 'paid' %}bg-emerald-100 text-emerald-700
+        {% elif bill.status == 'overdue' %}bg-red-100 text-red-700
+        {% elif bill.status == 'sent' %}bg-blue-100 text-blue-700
+        {% else %}bg-slate-100 text-slate-600{% endif %}">
+        {{ bill.get_status_display }}
+      </span>
+    </div>
+    <div class="grid grid-cols-3 gap-2 text-xs text-slate-500 mb-3">
+      <div>
+        <p>{% trans "Rent" %}</p>
+        <p class="font-semibold text-slate-800">฿{{ bill.base_rent|floatformat:0 }}</p>
+      </div>
+      <div>
+        <p><i class="fa-solid fa-bolt text-amber-400 mr-0.5"></i>{% trans "Elec" %}</p>
+        <p class="font-semibold text-slate-800">฿{{ bill.elec_amt|floatformat:0 }}</p>
+      </div>
+      <div>
+        <p><i class="fa-solid fa-droplet text-blue-400 mr-0.5"></i>{% trans "Water" %}</p>
+        <p class="font-semibold text-slate-800">฿{{ bill.water_amt|floatformat:0 }}</p>
+      </div>
+    </div>
+    <div class="flex items-center justify-between border-t border-slate-100 pt-2">
+      <span class="text-xs text-slate-400">
+        {% if bill.due_date %}<i class="fa-regular fa-calendar mr-1"></i>{% trans "Due" %}: {{ bill.due_date|date:"d M Y" }}{% endif %}
+      </span>
+      <span class="font-bold text-primary">฿{{ bill.total|floatformat:0 }}</span>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}

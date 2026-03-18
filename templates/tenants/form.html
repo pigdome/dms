@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% if object %}{% trans "Edit Tenant" %}{% else %}{% trans "Add Tenant" %}{% endif %} - DMS{% endblock %}
+{% block nav_tenants %}text-primary{% endblock %}
+
+{% block content %}
+<div class="pb-24 lg:pb-6">
+    <!-- Header -->
+    <header class="flex items-center p-4 border-b border-slate-200 dark:border-slate-800 sticky top-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-10">
+        <a href="{% url 'tenants:list' %}" class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+            <i class="fa-solid fa-arrow-left"></i>
+        </a>
+        <h1 class="text-xl font-bold ml-2 flex-1">{% if object %}{% trans "Edit Tenant" %}{% else %}{% trans "Add Tenant" %}{% endif %}</h1>
+    </header>
+
+    <div class="max-w-md mx-auto">
+        <main class="flex-1 pb-24">
+            <div class="p-4">
+                <!-- Import notice -->
+                <div class="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center justify-between mb-6">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-primary text-white p-2 rounded-lg">
+                            <i class="fa-solid fa-file-arrow-up"></i>
+                        </div>
+                        <div>
+                            <p class="font-bold text-sm">{% trans "Import multiple tenants?" %}</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">{% trans "Supports Excel and CSV files" %}</p>
+                        </div>
+                    </div>
+                    <button type="button" class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-primary/90 transition-all">
+                        {% trans "Import File" %}
+                    </button>
+                </div>
+
+                <div class="flex items-center gap-2 mb-4">
+                    <i class="fa-solid fa-user-plus"></i>
+                    <h2 class="text-lg font-bold">{% trans "Tenant Info" %}</h2>
+                </div>
+
+                <form method="post" class="space-y-5">
+                    {% csrf_token %}
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <!-- Room -->
+                        <label class="flex flex-col gap-1.5">
+                            <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">{% trans "Room" %}</span>
+                            <select name="room" class="form-select rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-primary focus:border-primary text-sm h-12">
+                                <option value="">{% trans "Select Room" %}</option>
+                                {% for room in available_rooms %}
+                                <option value="{{ room.pk }}" {% if form.room.value == room.pk|stringformat:"s" %}selected{% endif %}>
+                                    {{ room.number }} ({{ room.get_status_display }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </label>
+
+                        <!-- Start date -->
+                        <label class="flex flex-col gap-1.5">
+                            <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">{% trans "Move-in Date" %}</span>
+                            <input type="date" name="start_date" value="{{ form.start_date.value|default:'' }}"
+                                   class="form-input rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-primary focus:border-primary text-sm h-12"/>
+                        </label>
+                    </div>
+
+                    <!-- First name -->
+                    <label class="flex flex-col gap-1.5">
+                        <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">{% trans "First Name" %}</span>
+                        <input type="text" name="first_name" value="{{ form.first_name.value|default:'' }}"
+                               class="form-input rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-primary focus:border-primary text-sm h-12"
+                               placeholder="{% trans "First name" %}"/>
+                    </label>
+
+                    <!-- Last name -->
+                    <label class="flex flex-col gap-1.5">
+                        <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">{% trans "Last Name" %}</span>
+                        <input type="text" name="last_name" value="{{ form.last_name.value|default:'' }}"
+                               class="form-input rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-primary focus:border-primary text-sm h-12"
+                               placeholder="{% trans "Last name" %}"/>
+                    </label>
+
+                    <!-- Username -->
+                    <label class="flex flex-col gap-1.5">
+                        <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">{% trans "Username" %}</span>
+                        <input type="text" name="username" value="{{ form.username.value|default:'' }}" required
+                               class="form-input rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-primary focus:border-primary text-sm h-12"
+                               placeholder="{% trans "Login username" %}"/>
+                        {% if form.username.errors %}<p class="text-xs text-red-500">{{ form.username.errors.0 }}</p>{% endif %}
+                    </label>
+
+                    <!-- Password (only for new tenants) -->
+                    {% if not object %}
+                    <label class="flex flex-col gap-1.5">
+                        <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">{% trans "Password" %}</span>
+                        <input type="password" name="password" required
+                               class="form-input rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-primary focus:border-primary text-sm h-12"
+                               placeholder="{% trans "Set initial password" %}"/>
+                    </label>
+                    {% endif %}
+
+                    <!-- Phone / LINE -->
+                    <label class="flex flex-col gap-1.5">
+                        <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">{% trans "Phone / LINE ID" %}</span>
+                        <div class="relative">
+                            <i class="fa-solid fa-phone"></i>
+                            <input type="text" name="phone" value="{{ form.phone.value|default:'' }}"
+                                   class="form-input w-full pl-11 rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-primary focus:border-primary text-sm h-12"
+                                   placeholder="{% trans "08X-XXX-XXXX or LINE ID" %}"/>
+                        </div>
+                    </label>
+
+                    <div class="pt-4 border-t border-slate-100 dark:border-slate-800">
+                        <label class="flex flex-col gap-1.5">
+                            <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">{% trans "Notes (optional)" %}</span>
+                            <textarea name="notes" rows="3"
+                                      class="form-textarea rounded-lg border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-primary focus:border-primary text-sm resize-none"
+                                      placeholder="{% trans "Additional details (if any)" %}"></textarea>
+                        </label>
+                    </div>
+
+                    <button type="submit" class="w-full bg-primary text-white font-bold py-4 rounded-xl shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all">
+                        {% if object %}{% trans "Save Changes" %}{% else %}{% trans "Save Tenant" %}{% endif %}
+                    </button>
+                </form>
+            </div>
+        </main>
+    </div>
+</div>
+{% endblock %}

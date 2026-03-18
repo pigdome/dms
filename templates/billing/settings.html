@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Billing Settings" %} - DMS{% endblock %}
+{% block nav_billing %}text-primary{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-6">
+
+  <h1 class="text-lg font-bold text-slate-800">{% trans "Payment & Billing Settings" %}</h1>
+
+  <form method="post">
+    {% csrf_token %}
+
+    <!-- TMR Payment Gateway -->
+    <section class="bg-white rounded-xl border border-slate-100 shadow-sm p-5 mb-5">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="bg-primary/10 p-2 rounded-lg">
+          <i class="fa-solid fa-credit-card text-primary"></i>
+        </div>
+        <h2 class="text-base font-bold text-slate-800">{% trans "TMR Payment Gateway" %}</h2>
+      </div>
+      <div class="space-y-4">
+        <label class="flex flex-col gap-1.5">
+          <span class="text-sm font-medium text-slate-700">{% trans "TMR API Key" %}</span>
+          <input type="text" name="tmr_api_key"
+                 value="{{ settings.tmr_api_key }}"
+                 placeholder="{% trans 'Enter your API Key' %}"
+                 class="w-full h-11 px-3 rounded-lg border border-slate-200 bg-slate-50 text-sm
+                        focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary">
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-sm font-medium text-slate-700">{% trans "TMR API Secret" %}</span>
+          <input type="password" name="tmr_secret"
+                 value="{{ settings.tmr_secret }}"
+                 placeholder="{% trans 'Enter your API Secret' %}"
+                 class="w-full h-11 px-3 rounded-lg border border-slate-200 bg-slate-50 text-sm
+                        focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary">
+        </label>
+      </div>
+    </section>
+
+    <!-- Billing Cycle -->
+    <section class="bg-white rounded-xl border border-slate-100 shadow-sm p-5 mb-5">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="bg-primary/10 p-2 rounded-lg">
+          <i class="fa-solid fa-calendar-days text-primary"></i>
+        </div>
+        <h2 class="text-base font-bold text-slate-800">{% trans "Billing Cycle" %}</h2>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <label class="flex flex-col gap-1.5">
+          <span class="text-sm font-medium text-slate-700">{% trans "Bill Issue Day" %}</span>
+          <select name="bill_day"
+                  class="w-full h-11 px-3 rounded-lg border border-slate-200 bg-slate-50 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary">
+            {% for value, label in bill_day_choices %}
+            <option value="{{ value }}" {% if settings.bill_day == value %}selected{% endif %}>
+              {{ label }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-sm font-medium text-slate-700">{% trans "Grace Days" %}</span>
+          <div class="relative">
+            <input type="number" name="grace_days" min="0" max="30"
+                   value="{{ settings.grace_days }}"
+                   class="w-full h-11 px-3 pr-12 rounded-lg border border-slate-200 bg-slate-50 text-sm
+                          focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary">
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">{% trans "days" %}</span>
+          </div>
+        </label>
+      </div>
+    </section>
+
+    <!-- Utility Rates -->
+    <section class="bg-white rounded-xl border border-slate-100 shadow-sm p-5 mb-5">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="bg-primary/10 p-2 rounded-lg">
+          <i class="fa-solid fa-bolt text-primary"></i>
+        </div>
+        <h2 class="text-base font-bold text-slate-800">{% trans "Utility Rates" %}</h2>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <label class="flex flex-col gap-1.5">
+          <span class="text-sm font-medium text-slate-700">{% trans "Electricity Rate (per unit)" %}</span>
+          <div class="relative">
+            <input type="number" name="elec_rate" step="0.01" min="0"
+                   value="{{ settings.elec_rate }}"
+                   class="w-full h-11 px-3 pr-12 rounded-lg border border-slate-200 bg-slate-50 text-sm
+                          focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary">
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">฿</span>
+          </div>
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-sm font-medium text-slate-700">{% trans "Water Rate (per unit)" %}</span>
+          <div class="relative">
+            <input type="number" name="water_rate" step="0.01" min="0"
+                   value="{{ settings.water_rate }}"
+                   class="w-full h-11 px-3 pr-12 rounded-lg border border-slate-200 bg-slate-50 text-sm
+                          focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary">
+            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">฿</span>
+          </div>
+        </label>
+      </div>
+    </section>
+
+    <!-- Auto-Dunning -->
+    <section class="bg-white rounded-xl border border-slate-100 shadow-sm p-5 mb-6">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="bg-primary/10 p-2 rounded-lg">
+            <i class="fa-solid fa-bell text-primary"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-bold text-slate-800">{% trans "Auto Dunning" %}</h2>
+            <p class="text-xs text-slate-500 mt-0.5">{% trans "Send reminders before and after due date" %}</p>
+          </div>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" name="dunning_enabled" value="1"
+                 {% if settings.dunning_enabled %}checked{% endif %}
+                 class="sr-only peer">
+          <div class="w-11 h-6 bg-slate-200 rounded-full peer
+                      peer-checked:bg-primary
+                      after:content-[''] after:absolute after:top-0.5 after:left-0.5
+                      after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all
+                      peer-checked:after:translate-x-5"></div>
+        </label>
+      </div>
+    </section>
+
+    <!-- Save button -->
+    <button type="submit"
+            class="w-full bg-primary text-white py-3 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors">
+      {% trans "Save Settings" %}
+    </button>
+  </form>
+
+</div>
+{% endblock %}

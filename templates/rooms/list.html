@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Rooms" %} - DMS{% endblock %}
+{% block nav_rooms %}text-primary{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+
+  <!-- Header row -->
+  <div class="flex items-center justify-between">
+    <h1 class="text-lg font-bold text-slate-800">{% trans "Rooms" %}</h1>
+    <a href="{% url 'rooms:create' %}"
+       class="flex items-center gap-1.5 bg-primary text-white text-sm font-semibold px-4 py-2 rounded-lg">
+      <i class="fa-solid fa-plus"></i>
+      {% trans "Add Room" %}
+    </a>
+  </div>
+
+  <!-- Status filter chips -->
+  <div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+    <a href="{% url 'rooms:list' %}"
+       class="flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium
+              {% if not status_filter %}bg-primary text-white{% else %}bg-white border border-slate-200 text-slate-600{% endif %}">
+      {% trans "All" %}
+    </a>
+    <a href="?status=occupied"
+       class="flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium
+              {% if status_filter == 'occupied' %}bg-primary text-white{% else %}bg-white border border-slate-200 text-slate-600{% endif %}">
+      {% trans "Occupied" %}
+    </a>
+    <a href="?status=vacant"
+       class="flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium
+              {% if status_filter == 'vacant' %}bg-primary text-white{% else %}bg-white border border-slate-200 text-slate-600{% endif %}">
+      {% trans "Vacant" %}
+    </a>
+    <a href="?status=cleaning"
+       class="flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium
+              {% if status_filter == 'cleaning' %}bg-primary text-white{% else %}bg-white border border-slate-200 text-slate-600{% endif %}">
+      {% trans "Cleaning" %}
+    </a>
+    <a href="?status=maintenance"
+       class="flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium
+              {% if status_filter == 'maintenance' %}bg-primary text-white{% else %}bg-white border border-slate-200 text-slate-600{% endif %}">
+      {% trans "Maintenance" %}
+    </a>
+  </div>
+
+  <!-- Room cards -->
+  {% if rooms %}
+  <div class="space-y-3">
+    {% for room in rooms %}
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-lg flex items-center justify-center
+            {% if room.status == 'occupied' %}bg-primary/10 text-primary
+            {% elif room.status == 'vacant' %}bg-green-100 text-green-600
+            {% elif room.status == 'cleaning' %}bg-amber-100 text-amber-600
+            {% else %}bg-red-100 text-red-600{% endif %}">
+            <i class="fa-solid
+              {% if room.status == 'occupied' %}fa-person
+              {% elif room.status == 'vacant' %}fa-door-open
+              {% elif room.status == 'cleaning' %}fa-broom
+              {% else %}fa-wrench{% endif %} text-xl"></i>
+          </div>
+          <div>
+            <p class="font-bold text-slate-800">{% trans "Room" %} {{ room.number }}</p>
+            <p class="text-xs text-slate-500">{{ room.floor.building.name }} · {% trans "Floor" %} {{ room.floor.number }}</p>
+          </div>
+        </div>
+        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider
+          {% if room.status == 'occupied' %}bg-blue-100 text-blue-700
+          {% elif room.status == 'vacant' %}bg-green-100 text-green-700
+          {% elif room.status == 'cleaning' %}bg-amber-100 text-amber-700
+          {% else %}bg-red-100 text-red-700{% endif %}">
+          {{ room.get_status_display }}
+        </span>
+      </div>
+      <div class="flex gap-2">
+        <a href="{% url 'rooms:detail' room.pk %}"
+           class="flex-1 bg-slate-100 text-slate-700 py-2 rounded-lg text-sm font-semibold text-center">
+          {% trans "View Details" %}
+        </a>
+        <a href="{% url 'rooms:update' room.pk %}"
+           class="px-3 bg-primary/10 text-primary rounded-lg flex items-center justify-center">
+          <i class="fa-solid fa-pen-to-square"></i>
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-8 text-center">
+    <i class="fa-solid fa-door-open text-3xl text-slate-300 mb-3"></i>
+    <p class="text-slate-500 font-medium">{% trans "No rooms found." %}</p>
+    <a href="{% url 'rooms:create' %}" class="inline-block mt-3 text-primary text-sm font-semibold">
+      {% trans "+ Add your first room" %}
+    </a>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
