@@ -8,19 +8,9 @@ from django.utils import timezone
 
 from apps.rooms.models import Room, Building, Floor, MeterReading
 
-
-def staff_required(view_func):
-    from functools import wraps
-
-    @wraps(view_func)
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('core:login')
-        if request.user.role == 'tenant':
-            return redirect('tenant:home')
-        return view_func(request, *args, **kwargs)
-
-    return wrapper
+from apps.core.decorators import staff_required
+from apps.core.utils import SimpleForm
+from apps.core.models import ActivityLog
 
 
 def _dorm_rooms(user, dormitory=None):
@@ -71,7 +61,7 @@ class RoomCreateView(View):
         return {
             'floors': floors,
             'status_choices': Room.Status.choices,
-            'form': _SimpleForm(data or {}),
+            'form': SimpleForm(data or {}),
         }
 
     def get(self, request):
@@ -107,6 +97,12 @@ class RoomCreateView(View):
         room = Room.objects.create(
             floor=floor, number=number, base_rent=base_rent, status=status
         )
+        ActivityLog.objects.create(
+            dormitory=dorm,
+            user=request.user,
+            action='room_created',
+            detail={'room_id': room.pk, 'room_number': room.number},
+        )
         messages.success(request, _('Room created successfully.'))
         return redirect('rooms:detail', pk=room.pk)
 
@@ -128,7 +124,7 @@ class RoomUpdateView(View):
             'object': room,
             'floors': floors,
             'status_choices': Room.Status.choices,
-            'form': _SimpleForm(form_data),
+            'form': SimpleForm(form_data),
         }
 
     def get(self, request, pk):
@@ -162,6 +158,12 @@ class RoomUpdateView(View):
         room.base_rent = base_rent
         room.status = status
         room.save()
+        ActivityLog.objects.create(
+            dormitory=dorm,
+            user=request.user,
+            action='room_updated',
+            detail={'room_id': room.pk, 'room_number': room.number},
+        )
         messages.success(request, _('Room updated successfully.'))
         return redirect('rooms:detail', pk=room.pk)
 
@@ -175,7 +177,7 @@ class MeterReadingCreateView(View):
         return {
             'buildings': buildings,
             'rooms': rooms,
-            'form': _SimpleForm(data or {}),
+            'form': SimpleForm(data or {}),
             'today': timezone.now().date().isoformat(),
             'selected_room_id': selected_room_id or (data or {}).get('room', ''),
         }
@@ -217,25 +219,13 @@ class MeterReadingCreateView(View):
             kwargs['elec_photo'] = request.FILES['elec_photo']
 
         MeterReading.objects.create(**kwargs)
+        ActivityLog.objects.create(
+            dormitory=dorm,
+            user=request.user,
+            action='meter_reading_saved',
+            detail={'room_id': room.pk, 'room_number': room.number, 'date': reading_date},
+        )
         messages.success(request, _('Meter reading saved successfully.'))
         return redirect('rooms:detail', pk=room.pk)
 
 
-class _SimpleForm:
-    """Minimal form shim so templates can call form.field.value and form.field.errors."""
-    def __init__(self, data):
-        self._data = data
-
-    def __getattr__(self, name):
-        class _Field:
-            def __init__(self, val):
-                self._val = val
-                self.errors = []
-
-            def value(self):
-                return self._val
-
-            def __str__(self):
-                return str(self._val) if self._val is not None else ''
-
-        return _Field(self._data.get(name, ''))

@@ -7,19 +7,9 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.tenants.models import TenantProfile, Lease
 
-
-def staff_required(view_func):
-    from functools import wraps
-
-    @wraps(view_func)
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('core:login')
-        if request.user.role == 'tenant':
-            return redirect('tenant:home')
-        return view_func(request, *args, **kwargs)
-
-    return wrapper
+from apps.core.decorators import staff_required
+from apps.core.utils import SimpleForm
+from apps.core.models import ActivityLog
 
 
 def _dorm_profiles(user, dormitory=None):
@@ -97,7 +87,7 @@ class TenantCreateView(View):
         ).select_related('floor', 'floor__building')
         return {
             'available_rooms': available_rooms,
-            'form': _SimpleForm(data or {}),
+            'form': SimpleForm(data or {}),
         }
 
     def get(self, request):
@@ -160,6 +150,13 @@ class TenantCreateView(View):
                 status='active',
             )
 
+        # Add activity log
+        ActivityLog.objects.create(
+            dormitory=dorm,
+            user=request.user,
+            action='tenant_added',
+            detail={'profile_id': profile.pk, 'name': profile.full_name},
+        )
         messages.success(request, _('Tenant added successfully.'))
         return redirect('tenants:detail', pk=profile.pk)
 
@@ -282,7 +279,7 @@ class TenantUpdateView(View):
         return render(request, 'tenants/form.html', {
             'object': profile,
             'available_rooms': available_rooms,
-            'form': _SimpleForm(data),
+            'form': SimpleForm(data),
         })
 
     def post(self, request, pk):
@@ -301,13 +298,14 @@ class TenantUpdateView(View):
                 Room, pk=room_id, floor__building__dormitory=dorm
             )
             profile.room = room
-            # Update the active lease's room to stay in sync
-            active_lease = profile.leases.filter(status='active').first()
-            if active_lease:
-                active_lease.room = room
-                active_lease.save()
         profile.save()
 
+        ActivityLog.objects.create(
+            dormitory=dorm,
+            user=request.user,
+            action='tenant_updated',
+            detail={'profile_id': profile.pk, 'name': profile.full_name},
+        )
         messages.success(request, _('Tenant updated successfully.'))
         return redirect('tenants:detail', pk=profile.pk)
 
@@ -487,17 +485,3 @@ class TenantProfileView(View):
         })
 
 
-class _SimpleForm:
-    def __init__(self, data):
-        self._data = data
-
-    def __getattr__(self, name):
-        class _Field:
-            def __init__(self, val):
-                self._val = val
-                self.errors = []
-
-            def value(self):
-                return self._val
-
-        return _Field(self._data.get(name, ''))

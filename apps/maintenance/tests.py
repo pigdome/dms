@@ -155,3 +155,17 @@ class TenantTicketCreateWithActiveLease(TestCase):
         self.assertEqual(resp.status_code, 200)
         # Context should show the active lease room, not the legacy profile.room
         self.assertEqual(resp.context['room'], self.room_new)
+
+    def test_tenant_maintenance_shows_previous_tickets(self):
+        # Create some tickets for the room
+        t1 = MaintenanceTicket.objects.create(room=self.room_new, reported_by=self.tenant_user, description='Old ticket')
+        t2 = MaintenanceTicket.objects.create(room=self.room_new, reported_by=self.tenant_user, description='New ticket')
+
+        self.client.force_login(self.tenant_user)
+        resp = self.client.get('/tenant/maintenance/')
+        self.assertEqual(resp.status_code, 200)
+
+        tickets = list(resp.context['tickets'])
+        self.assertEqual(len(tickets), 2)
+        self.assertIn(t1, tickets)
+        self.assertIn(t2, tickets)

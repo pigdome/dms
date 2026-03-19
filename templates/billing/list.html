@@ -10,9 +10,16 @@
   <!-- Header + Settings link -->
   <div class="flex items-center justify-between">
     <h2 class="font-bold text-lg">{% trans "Bills" %}</h2>
-    <a href="{% url 'billing:settings' %}" class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-primary px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-sm">
-      <i class="fa-solid fa-gear"></i>{% trans "Settings" %}
-    </a>
+    <div class="flex items-center gap-2">
+      <a href="{% url 'billing:export' %}?status={{ status_filter }}&month={{ month_filter }}"
+         class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-emerald-600 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-sm transition-colors">
+        <i class="fa-solid fa-file-csv"></i>{% trans "Export CSV" %}
+      </a>
+      <a href="{% url 'billing:settings' %}"
+         class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-primary px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-sm transition-colors">
+        <i class="fa-solid fa-gear"></i>{% trans "Settings" %}
+      </a>
+    </div>
   </div>
 
   <!-- Filters -->

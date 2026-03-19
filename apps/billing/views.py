@@ -1,3 +1,4 @@
+import csv
 import hashlib
 import hmac
 import json
@@ -17,20 +18,9 @@ from django.views.decorators.http import require_POST
 from django.shortcuts import get_object_or_404
 
 from apps.billing.models import Bill, BillingSettings, Payment
+from apps.core.models import ActivityLog
 
-
-def staff_required(view_func):
-    from functools import wraps
-
-    @wraps(view_func)
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('core:login')
-        if request.user.role == 'tenant':
-            return redirect('tenant:home')
-        return view_func(request, *args, **kwargs)
-
-    return wrapper
+from apps.core.decorators import staff_required
 
 
 @method_decorator([login_required, staff_required], name='dispatch')
@@ -147,6 +137,12 @@ class BillDetailView(View):
         if new_status in valid:
             bill.status = new_status
             bill.save(update_fields=['status', 'updated_at'])
+            ActivityLog.objects.create(
+                dormitory=dorm,
+                user=request.user,
+                action='bill_status_changed',
+                detail={'bill_id': bill.pk, 'new_status': new_status, 'room_number': bill.room.number},
+            )
             messages.success(request, _('Bill status updated.'))
         else:
             messages.error(request, _('Invalid status.'))
@@ -206,5 +202,74 @@ def tmr_webhook(request):
         )
         bill.status = Bill.Status.PAID
         bill.save(update_fields=['status', 'updated_at'])
+        ActivityLog.objects.create(
+            dormitory=bill.room.floor.building.dormitory,
+            user=None,  # System action
+            action='payment_received_webhook',
+            detail={'bill_id': bill.pk, 'invoice': bill.invoice_number, 'amount': data.get('amount')},
+        )
 
     return JsonResponse({'status': 'ok'})
+
+@method_decorator([login_required, staff_required], name='dispatch')
+class BillCSVExportView(View):
+    def get(self, request):
+        dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
+        if not dorm:
+            return HttpResponse(status=403)
+
+        bills = Bill.objects.filter(
+            room__floor__building__dormitory=dorm
+        ).select_related('room', 'room__floor', 'room__floor__building').order_by('-month', '-created_at')
+
+        # Reuse filters (simplified)
+        status = request.GET.get('status')
+        if status:
+            bills = bills.filter(status=status)
+        month = request.GET.get('month')
+        if month:
+            try:
+                from datetime import datetime
+                d = datetime.strptime(month, '%Y-%m').date()
+                bills = bills.filter(month=d)
+            except Exception:
+                pass
+
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="bills_{dorm.pk}_{timezone.now().date()}.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow([
+            'Invoice', 'Month', 'Room', 'Building', 'Tenant',
+            'Base Rent', 'Elec (Used)', 'Elec (Amt)', 'Water (Used)', 'Water (Amt)',
+            'Others', 'Total', 'Status', 'Due Date'
+        ])
+
+        for b in bills:
+            # Try to get active tenant via Lease
+            from apps.tenants.models import TenantProfile
+            tenant = "N/A"
+            active_lease = b.room.leases.filter(status='active').first()
+            if active_lease:
+                tenant = active_lease.tenant.full_name
+            elif b.room.tenant_profiles.exists():
+                tenant = b.room.tenant_profiles.first().full_name
+
+            writer.writerow([
+                b.invoice_number,
+                b.month.strftime('%Y-%m') if b.month else '',
+                b.room.number,
+                b.room.floor.building.name,
+                tenant,
+                b.base_rent,
+                b.elec_curr - (b.elec_prev or 0),
+                b.elec_amt,
+                b.water_curr - (b.water_prev or 0),
+                b.water_amt,
+                b.other_amt,
+                b.total,
+                b.get_status_display(),
+                b.due_date.strftime('%Y-%m-%d') if b.due_date else ''
+            ])
+
+        return response

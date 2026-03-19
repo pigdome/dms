@@ -8,19 +8,9 @@ from django.utils import timezone
 
 from apps.notifications.models import Parcel, Broadcast
 
-
-def staff_required(view_func):
-    from functools import wraps
-
-    @wraps(view_func)
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('core:login')
-        if request.user.role == 'tenant':
-            return redirect('tenant:home')
-        return view_func(request, *args, **kwargs)
-
-    return wrapper
+from apps.core.decorators import staff_required
+from apps.core.utils import SimpleForm
+from apps.core.models import ActivityLog
 
 
 def _dorm_rooms(user, dormitory=None):
@@ -37,7 +27,7 @@ class ParcelCreateView(View):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         return render(request, 'notifications/parcel_log.html', {
             'rooms': _dorm_rooms(request.user, dormitory=dorm),
-            'form': _SimpleForm({}),
+            'form': SimpleForm({}),
         })
 
     def post(self, request):
@@ -51,14 +41,14 @@ class ParcelCreateView(View):
             messages.error(request, _('Please fill in all required fields.'))
             return render(request, 'notifications/parcel_log.html', {
                 'rooms': _dorm_rooms(request.user, dormitory=dorm),
-                'form': _SimpleForm(data),
+                'form': SimpleForm(data),
             })
 
         if 'photo' not in request.FILES:
             messages.error(request, _('Please upload a photo of the parcel.'))
             return render(request, 'notifications/parcel_log.html', {
                 'rooms': _dorm_rooms(request.user, dormitory=dorm),
-                'form': _SimpleForm(data),
+                'form': SimpleForm(data),
             })
 
         from apps.rooms.models import Room
@@ -71,6 +61,12 @@ class ParcelCreateView(View):
             notes=notes,
             logged_by=request.user,
             notified_at=timezone.now(),  # mark as notified immediately
+        )
+        ActivityLog.objects.create(
+            dormitory=dorm,
+            user=request.user,
+            action='parcel_logged',
+            detail={'parcel_id': parcel.pk, 'room_number': room.number},
         )
 
         messages.success(request, _('Parcel logged and tenant notified.'))
@@ -99,7 +95,7 @@ class BroadcastCreateView(View):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         recent_broadcasts = Broadcast.objects.filter(dormitory=dorm)[:5] if dorm else []
         ctx = self._audience_context(dorm)
-        ctx.update({'form': _SimpleForm({}), 'recent_broadcasts': recent_broadcasts})
+        ctx.update({'form': SimpleForm({}), 'recent_broadcasts': recent_broadcasts})
         return render(request, 'notifications/broadcast.html', ctx)
 
     def post(self, request):
@@ -114,7 +110,7 @@ class BroadcastCreateView(View):
             messages.error(request, _('Title and body are required.'))
             ctx = self._audience_context(dorm)
             ctx.update({
-                'form': _SimpleForm(data),
+                'form': SimpleForm(data),
                 'recent_broadcasts': Broadcast.objects.filter(dormitory=dorm)[:5] if dorm else [],
             })
             return render(request, 'notifications/broadcast.html', ctx)
@@ -135,6 +131,12 @@ class BroadcastCreateView(View):
         if 'attachment' in request.FILES:
             bc.attachment = request.FILES['attachment']
         bc.save()
+        ActivityLog.objects.create(
+            dormitory=dorm,
+            user=request.user,
+            action='broadcast_sent',
+            detail={'broadcast_id': bc.pk, 'title': bc.title},
+        )
 
         # Send LINE push messages
         try:
@@ -150,17 +152,3 @@ class BroadcastCreateView(View):
         return redirect('notifications:broadcast')
 
 
-class _SimpleForm:
-    def __init__(self, data):
-        self._data = data
-
-    def __getattr__(self, name):
-        class _Field:
-            def __init__(self, val):
-                self._val = val
-                self.errors = []
-
-            def value(self):
-                return self._val
-
-        return _Field(self._data.get(name, ''))

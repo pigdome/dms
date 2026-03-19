@@ -8,19 +8,9 @@ from django.utils.translation import gettext_lazy as _
 from apps.maintenance.models import MaintenanceTicket, TicketPhoto, TicketStatusHistory
 from apps.tenants.models import TenantProfile
 
-
-def staff_required(view_func):
-    from functools import wraps
-
-    @wraps(view_func)
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('core:login')
-        if request.user.role == 'tenant':
-            return redirect('tenant:home')
-        return view_func(request, *args, **kwargs)
-
-    return wrapper
+from apps.core.decorators import staff_required
+from apps.core.utils import SimpleForm
+from apps.core.models import ActivityLog
 
 
 def _dorm_tickets(user, dormitory=None):
@@ -79,7 +69,7 @@ class TicketCreateView(View):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         return render(request, 'maintenance/form.html', {
             'rooms': _dorm_rooms(request.user, dormitory=dorm),
-            'form': _SimpleForm({}),
+            'form': SimpleForm({}),
         })
 
     def post(self, request):
@@ -93,7 +83,7 @@ class TicketCreateView(View):
             messages.error(request, _('Please fill in all required fields.'))
             return render(request, 'maintenance/form.html', {
                 'rooms': _dorm_rooms(request.user, dormitory=dorm),
-                'form': _SimpleForm(data),
+                'form': SimpleForm(data),
             })
 
         from apps.rooms.models import Room
@@ -104,6 +94,12 @@ class TicketCreateView(View):
             reported_by=request.user,
             description=description,
             technician=technician,
+        )
+        ActivityLog.objects.create(
+            dormitory=dorm,
+            user=request.user,
+            action='maintenance_ticket_created',
+            detail={'ticket_id': ticket.pk, 'room_number': room.number},
         )
 
         # Create initial status history entry
@@ -142,9 +138,11 @@ class TenantTicketCreateView(View):
         if not active_room:
             messages.error(request, _('You do not have an assigned room.'))
             return redirect('tenant:home')
+        tickets = MaintenanceTicket.objects.filter(room=active_room).order_by('-created_at')
         return render(request, 'maintenance/tenant_form.html', {
             'room': active_room,
-            'form': _SimpleForm({}),
+            'tickets': tickets,
+            'form': SimpleForm({}),
         })
 
     def post(self, request):
@@ -164,15 +162,23 @@ class TenantTicketCreateView(View):
         description = data.get('description', '').strip()
         if not description:
             messages.error(request, _('Please describe the issue.'))
+            tickets = MaintenanceTicket.objects.filter(room=active_room).order_by('-created_at')
             return render(request, 'maintenance/tenant_form.html', {
                 'room': active_room,
-                'form': _SimpleForm(data),
+                'tickets': tickets,
+                'form': SimpleForm(data),
             })
 
         ticket = MaintenanceTicket.objects.create(
             room=active_room,
             reported_by=request.user,
             description=description,
+        )
+        ActivityLog.objects.create(
+            dormitory=profile.room.floor.building.dormitory if profile.room else request.user.dormitory,
+            user=request.user,
+            action='maintenance_ticket_created_tenant',
+            detail={'ticket_id': ticket.pk, 'room_number': active_room.number},
         )
         TicketStatusHistory.objects.create(
             ticket=ticket,
@@ -226,23 +232,15 @@ def update_status(request, pk):
                 changed_by=request.user,
                 note=note,
             )
+            ActivityLog.objects.create(
+                dormitory=dorm,
+                user=request.user,
+                action='maintenance_status_changed',
+                detail={'ticket_id': ticket.pk, 'new_status': new_status, 'room_number': ticket.room.number},
+            )
 
         messages.success(request, _('Ticket status updated.'))
 
     return redirect('maintenance:detail', pk=pk)
 
 
-class _SimpleForm:
-    def __init__(self, data):
-        self._data = data
-
-    def __getattr__(self, name):
-        class _Field:
-            def __init__(self, val):
-                self._val = val
-                self.errors = []
-
-            def value(self):
-                return self._val
-
-        return _Field(self._data.get(name, ''))

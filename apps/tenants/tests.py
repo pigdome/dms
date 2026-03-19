@@ -103,7 +103,7 @@ class TenantProfileMultiUnitTests(TestCase):
         )
 
     def test_tenant_has_two_active_leases(self):
-        active = cls = self.tenant.leases.filter(status='active')
+        active = self.tenant.leases.filter(status='active')
         self.assertEqual(active.count(), 2)
 
     def test_active_room_is_most_recent_lease(self):
