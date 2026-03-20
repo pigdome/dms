@@ -17,40 +17,23 @@
     </a>
   </div>
 
-  <!-- Status filter chips -->
-  <div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-    <a href="{% url 'rooms:list' %}"
-       class="flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium
-              {% if not status_filter %}bg-primary text-white{% else %}bg-white border border-slate-200 text-slate-600{% endif %}">
-      {% trans "All" %}
-    </a>
-    <a href="?status=occupied"
-       class="flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium
-              {% if status_filter == 'occupied' %}bg-primary text-white{% else %}bg-white border border-slate-200 text-slate-600{% endif %}">
-      {% trans "Occupied" %}
-    </a>
-    <a href="?status=vacant"
-       class="flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium
-              {% if status_filter == 'vacant' %}bg-primary text-white{% else %}bg-white border border-slate-200 text-slate-600{% endif %}">
-      {% trans "Vacant" %}
-    </a>
-    <a href="?status=cleaning"
-       class="flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium
-              {% if status_filter == 'cleaning' %}bg-primary text-white{% else %}bg-white border border-slate-200 text-slate-600{% endif %}">
-      {% trans "Cleaning" %}
-    </a>
-    <a href="?status=maintenance"
-       class="flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium
-              {% if status_filter == 'maintenance' %}bg-primary text-white{% else %}bg-white border border-slate-200 text-slate-600{% endif %}">
-      {% trans "Maintenance" %}
-    </a>
-  </div>
+  <!-- Status filter dropdown -->
+  <form method="get">
+    <select name="status" onchange="this.form.submit()"
+            class="text-sm h-9 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 focus:ring-primary focus:border-primary">
+      <option value="">{% trans "All statuses" %}</option>
+      <option value="occupied" {% if status_filter == 'occupied' %}selected{% endif %}>{% trans "Occupied" %}</option>
+      <option value="vacant" {% if status_filter == 'vacant' %}selected{% endif %}>{% trans "Vacant" %}</option>
+      <option value="cleaning" {% if status_filter == 'cleaning' %}selected{% endif %}>{% trans "Cleaning" %}</option>
+      <option value="maintenance" {% if status_filter == 'maintenance' %}selected{% endif %}>{% trans "Maintenance" %}</option>
+    </select>
+  </form>
 
   <!-- Room cards -->
   {% if rooms %}
   <div class="space-y-3">
     {% for room in rooms %}
-    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 flex flex-col gap-3">
+    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-4 flex flex-col gap-3">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-12 h-12 rounded-lg flex items-center justify-center
@@ -91,7 +74,7 @@
     {% endfor %}
   </div>
   {% else %}
-  <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-8 text-center">
+  <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-8 text-center">
     <i class="fa-solid fa-door-open text-3xl text-slate-300 mb-3"></i>
     <p class="text-slate-500 font-medium">{% trans "No rooms found." %}</p>
     <a href="{% url 'rooms:create' %}" class="inline-block mt-3 text-primary text-sm font-semibold">

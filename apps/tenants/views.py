@@ -388,10 +388,14 @@ class TenantBillDetailView(View):
 
         from apps.billing.models import Bill
         bill = get_object_or_404(
-            Bill.objects.select_related('room__floor__building__dormitory'),
+            Bill.objects.select_related(
+                'room__floor__building__dormitory',
+                'meter_reading',
+            ).prefetch_related('line_items__charge_type'),
             pk=pk, room__leases__tenant=profile
         )
         payment = getattr(bill, 'payment', None)
+        line_items = bill.line_items.all()
 
         # TMR QR URL (if bill is unpaid and dormitory has TMR configured)
         tmr_qr_url = None
@@ -405,6 +409,7 @@ class TenantBillDetailView(View):
         return render(request, 'tenants/tenant_bill_detail.html', {
             'bill': bill,
             'payment': payment,
+            'line_items': line_items,
             'tmr_qr_url': tmr_qr_url,
         })
 

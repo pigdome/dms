@@ -13,6 +13,6 @@ urlpatterns = [
     path('', TenantListView.as_view(), name='list'),
     path('add/', TenantCreateView.as_view(), name='create'),
     path('import/', TenantImportView.as_view(), name='import'),
-    path('<int:pk>/', TenantDetailView.as_view(), name='detail'),
-    path('<int:pk>/edit/', TenantUpdateView.as_view(), name='update'),
+    path('<uuid:pk>/', TenantDetailView.as_view(), name='detail'),
+    path('<uuid:pk>/edit/', TenantUpdateView.as_view(), name='update'),
 ]

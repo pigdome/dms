@@ -12,11 +12,11 @@
     <h2 class="font-bold text-lg">{% trans "Bills" %}</h2>
     <div class="flex items-center gap-2">
       <a href="{% url 'billing:export' %}?status={{ status_filter }}&month={{ month_filter }}"
-         class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-emerald-600 px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-sm transition-colors">
+         class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-emerald-600 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 shadow-sm transition-colors">
         <i class="fa-solid fa-file-csv"></i>{% trans "Export CSV" %}
       </a>
       <a href="{% url 'billing:settings' %}"
-         class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-primary px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-sm transition-colors">
+         class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-primary px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 shadow-sm transition-colors">
         <i class="fa-solid fa-gear"></i>{% trans "Settings" %}
       </a>
     </div>
@@ -25,16 +25,16 @@
   <!-- Filters -->
   <form method="get" class="flex gap-2 flex-wrap">
     <select name="status" onchange="this.form.submit()"
-            class="text-sm h-9 rounded-lg border border-slate-200 bg-white px-3 focus:ring-primary focus:border-primary">
+            class="text-sm h-9 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 focus:ring-primary focus:border-primary">
       <option value="">{% trans "All statuses" %}</option>
       {% for val, label in status_choices %}
       <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
     <input type="month" name="month" value="{{ month_filter }}" onchange="this.form.submit()"
-           class="text-sm h-9 rounded-lg border border-slate-200 bg-white px-3 focus:ring-primary focus:border-primary"/>
-    {% if status_filter or month_filter %}
-    <a href="{% url 'billing:list' %}" class="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 px-3 py-1.5 rounded-lg bg-white border border-slate-200">
+           class="text-sm h-9 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 focus:ring-primary focus:border-primary"/>
+    {% if status_filter or month_filter != default_month %}
+    <a href="{% url 'billing:list' %}" class="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600">
       <i class="fa-solid fa-xmark"></i>{% trans "Clear" %}
     </a>
     {% endif %}
@@ -42,7 +42,7 @@
 
   <!-- Bill list -->
   {% if not bills %}
-  <div class="bg-white rounded-2xl border border-slate-100 p-10 text-center shadow-sm">
+  <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-10 text-center shadow-sm">
     <i class="fa-solid fa-file-invoice text-slate-300 text-5xl mb-3"></i>
     <p class="text-slate-500">{% trans "No bills found." %}</p>
   </div>
@@ -50,7 +50,7 @@
   <div class="space-y-2">
     {% for bill in bills %}
     <a href="{% url 'billing:detail' bill.pk %}"
-       class="flex items-center justify-between bg-white rounded-2xl border border-slate-100 shadow-sm px-4 py-3 hover:border-primary/30 transition-colors">
+       class="flex items-center justify-between bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm px-4 py-3 hover:border-primary/30 transition-colors">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0
           {% if bill.status == 'paid' %}bg-emerald-100 text-emerald-600

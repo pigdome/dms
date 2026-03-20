@@ -37,8 +37,12 @@ class BillingSettingsView(View):
         if not settings:
             messages.error(request, _('No dormitory associated with your account.'))
             return redirect('dashboard:index')
+        
+        from apps.billing.forms import BillingSettingsForm
+        form = BillingSettingsForm(instance=settings)
         return render(request, 'billing/settings.html', {
             'settings': settings,
+            'form': form,
             'bill_day_choices': BillingSettings.BillDay.choices,
         })
 
@@ -48,35 +52,24 @@ class BillingSettingsView(View):
             messages.error(request, _('No dormitory associated with your account.'))
             return redirect('dashboard:index')
 
-        data = request.POST
-        settings.tmr_api_key = data.get('tmr_api_key', '').strip()
-        settings.tmr_secret = data.get('tmr_secret', '').strip()
-
-        bill_day = data.get('bill_day', '1')
-        valid_days = [str(d[0]) for d in BillingSettings.BillDay.choices]
-        if bill_day in valid_days:
-            settings.bill_day = int(bill_day)
-
-        try:
-            settings.grace_days = max(0, int(data.get('grace_days', 5) or 5))
-        except (ValueError, TypeError):
-            settings.grace_days = 5
-
-        try:
-            settings.elec_rate = float(data.get('elec_rate', 7.00) or 7.00)
-        except (ValueError, TypeError):
-            settings.elec_rate = 7.00
-
-        try:
-            settings.water_rate = float(data.get('water_rate', 18.00) or 18.00)
-        except (ValueError, TypeError):
-            settings.water_rate = 18.00
-
-        settings.dunning_enabled = bool(data.get('dunning_enabled'))
-        settings.save()
-
-        messages.success(request, _('Billing settings saved successfully.'))
-        return redirect('billing:settings')
+        from apps.billing.forms import BillingSettingsForm
+        form = BillingSettingsForm(request.POST, instance=settings)
+        if form.is_valid():
+            form.save()
+            ActivityLog.objects.create(
+                dormitory=settings.dormitory,
+                user=request.user,
+                action='billing_settings_updated',
+                detail={'settings_id': settings.pk},
+            )
+            messages.success(request, _('Billing settings updated successfully.'))
+            return redirect('billing:settings')
+        
+        return render(request, 'billing/settings.html', {
+            'settings': settings,
+            'form': form,
+            'bill_day_choices': BillingSettings.BillDay.choices,
+        })
 
 
 @method_decorator([login_required, staff_required], name='dispatch')
@@ -91,9 +84,11 @@ class BillListView(View):
             room__floor__building__dormitory=dorm
         ).select_related('room', 'room__floor', 'room__floor__building').order_by('-month', '-created_at')
 
-        # Filters
+        # Filters — default month to current month
         status_filter = request.GET.get('status', '')
-        month_filter = request.GET.get('month', '')
+        now = timezone.now()
+        default_month = now.strftime('%Y-%m')
+        month_filter = request.GET.get('month', default_month)
         if status_filter:
             bills = bills.filter(status=status_filter)
         if month_filter:
@@ -109,6 +104,7 @@ class BillListView(View):
             'status_choices': Bill.Status.choices,
             'status_filter': status_filter,
             'month_filter': month_filter,
+            'default_month': default_month,
         })
 
 
@@ -117,13 +113,18 @@ class BillDetailView(View):
     def get(self, request, pk):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         bill = get_object_or_404(
-            Bill.objects.select_related('room__floor__building__dormitory'),
+            Bill.objects.select_related(
+                'room__floor__building__dormitory',
+                'meter_reading',
+            ).prefetch_related('line_items__charge_type'),
             pk=pk, room__floor__building__dormitory=dorm
         )
         payment = getattr(bill, 'payment', None)
+        line_items = bill.line_items.all()
         return render(request, 'billing/detail.html', {
             'bill': bill,
             'payment': payment,
+            'line_items': line_items,
         })
 
     def post(self, request, pk):

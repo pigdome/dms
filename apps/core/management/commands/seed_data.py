@@ -286,16 +286,23 @@ class Command(BaseCommand):
                 else:                                   # current month
                     status = Bill.Status.PAID if room_num == '101' else Bill.Status.SENT
 
+                meter = MeterReading.objects.filter(
+                    room=rooms[room_num],
+                    reading_date__year=bill_month.year,
+                    reading_date__month=bill_month.month,
+                ).first()
+
                 bill, created = Bill.objects.get_or_create(
                     room=rooms[room_num],
                     month=bill_month,
                     defaults={
-                        'base_rent': rent,
-                        'water_amt': w_amt,
-                        'elec_amt':  e_amt,
-                        'total':     total,
-                        'due_date':  due,
-                        'status':    status,
+                        'base_rent':     rent,
+                        'water_amt':     w_amt,
+                        'elec_amt':      e_amt,
+                        'total':         total,
+                        'due_date':      due,
+                        'status':        status,
+                        'meter_reading': meter,
                     },
                 )
 

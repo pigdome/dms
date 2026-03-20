@@ -9,7 +9,7 @@
 
   <!-- Header -->
   <div class="flex items-center gap-3">
-    <a href="{% url 'tenant:bills' %}" class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 shadow-sm text-slate-600">
+    <a href="{% url 'tenant:bills' %}" class="w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 shadow-sm text-slate-600">
       <i class="fa-solid fa-arrow-left text-sm"></i>
     </a>
     <h2 class="font-bold text-lg flex-1">{{ bill.month|date:"F Y" }}</h2>
@@ -23,7 +23,7 @@
   </div>
 
   <!-- Bill breakdown -->
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+  <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
     <div class="flex justify-between items-start mb-4">
       <div>
         <p class="text-xs text-slate-400">{% trans "Invoice" %}</p>
@@ -34,20 +34,44 @@
         <p class="font-semibold text-sm mt-0.5">{{ bill.room.number }}</p>
       </div>
     </div>
-    <div class="space-y-2.5 text-sm border-t border-slate-100 pt-4">
+    <div class="space-y-2.5 text-sm border-t border-slate-100 dark:border-slate-700 pt-4">
       <div class="flex justify-between">
         <span class="text-slate-500">{% trans "Base Rent" %}</span>
         <span class="font-medium">฿{{ bill.base_rent|floatformat:2 }}</span>
       </div>
-      <div class="flex justify-between">
-        <span class="text-slate-500"><i class="fa-solid fa-bolt text-amber-400 mr-1.5"></i>{% trans "Electricity" %}</span>
-        <span class="font-medium">฿{{ bill.elec_amt|floatformat:2 }}</span>
+      <!-- Electricity with meter detail -->
+      <div>
+        <div class="flex justify-between">
+          <span class="text-slate-500"><i class="fa-solid fa-bolt text-amber-400 mr-1.5"></i>{% trans "Electricity" %}</span>
+          <span class="font-medium">฿{{ bill.elec_amt|floatformat:2 }}</span>
+        </div>
+        {% if bill.meter_reading %}
+        <p class="text-xs text-slate-400 mt-0.5 pl-5">
+          {{ bill.elec_prev|floatformat:0 }} → {{ bill.elec_curr|floatformat:0 }} ({{ bill.elec_units|floatformat:0 }} {% trans "units" %})
+        </p>
+        {% endif %}
       </div>
-      <div class="flex justify-between">
-        <span class="text-slate-500"><i class="fa-solid fa-droplet text-blue-400 mr-1.5"></i>{% trans "Water" %}</span>
-        <span class="font-medium">฿{{ bill.water_amt|floatformat:2 }}</span>
+      <!-- Water with meter detail -->
+      <div>
+        <div class="flex justify-between">
+          <span class="text-slate-500"><i class="fa-solid fa-droplet text-blue-400 mr-1.5"></i>{% trans "Water" %}</span>
+          <span class="font-medium">฿{{ bill.water_amt|floatformat:2 }}</span>
+        </div>
+        {% if bill.meter_reading %}
+        <p class="text-xs text-slate-400 mt-0.5 pl-5">
+          {{ bill.water_prev|floatformat:0 }} → {{ bill.water_curr|floatformat:0 }} ({{ bill.water_units|floatformat:0 }} {% trans "units" %})
+        </p>
+        {% endif %}
       </div>
-      <div class="flex justify-between font-bold text-base border-t border-slate-100 pt-2.5">
+      {% if line_items %}
+      {% for item in line_items %}
+      <div class="flex justify-between">
+        <span class="text-slate-500"><i class="fa-solid fa-plus text-violet-400 mr-1.5"></i>{{ item.description }}</span>
+        <span class="font-medium">฿{{ item.amount|floatformat:2 }}</span>
+      </div>
+      {% endfor %}
+      {% endif %}
+      <div class="flex justify-between font-bold text-base border-t border-slate-100 dark:border-slate-700 pt-2.5">
         <span>{% trans "Total" %}</span>
         <span class="text-primary text-xl">฿{{ bill.total|floatformat:2 }}</span>
       </div>
@@ -71,11 +95,11 @@
   {% elif bill.status == 'sent' or bill.status == 'overdue' %}
   <!-- Payment section -->
   {% if tmr_qr_url %}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 text-center">
+  <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5 text-center">
     <p class="font-semibold mb-4">{% trans "Scan to Pay (PromptPay)" %}</p>
     <div class="flex justify-center mb-4">
       <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={{ tmr_qr_url }}"
-           alt="QR Code" class="w-48 h-48 rounded-xl border border-slate-100 shadow-sm"/>
+           alt="QR Code" class="w-48 h-48 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm"/>
     </div>
     <p class="text-xs text-slate-400">{% trans "Scan QR code with your banking app" %}</p>
     <a href="{{ tmr_qr_url }}" target="_blank"
@@ -92,7 +116,7 @@
   {% endif %}
 
   {% elif bill.status == 'draft' %}
-  <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-center">
+  <div class="bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl p-5 text-center">
     <i class="fa-solid fa-file-pen text-slate-400 text-2xl mb-2"></i>
     <p class="text-slate-600 font-medium">{% trans "Bill not yet issued" %}</p>
     <p class="text-sm text-slate-400 mt-1">{% trans "You will be notified when the bill is ready for payment." %}</p>

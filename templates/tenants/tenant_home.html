@@ -17,7 +17,7 @@
   {% else %}
 
   <!-- Room info card -->
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+  <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
     <div class="flex items-center gap-3 mb-4">
       <div class="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
         <i class="fa-solid fa-door-open text-primary text-lg"></i>
@@ -35,19 +35,19 @@
     </div>
     {% if profile.room %}
     <div class="grid grid-cols-2 gap-3">
-      <div class="bg-slate-50 rounded-xl p-3">
+      <div class="bg-slate-50 dark:bg-slate-700 rounded-xl p-3">
         <p class="text-xs text-slate-400">{% trans "Building" %}</p>
         <p class="font-semibold text-sm mt-0.5">{{ profile.room.floor.building.name }}</p>
       </div>
-      <div class="bg-slate-50 rounded-xl p-3">
+      <div class="bg-slate-50 dark:bg-slate-700 rounded-xl p-3">
         <p class="text-xs text-slate-400">{% trans "Floor" %}</p>
         <p class="font-semibold text-sm mt-0.5">{{ profile.room.floor.number }}</p>
       </div>
-      <div class="bg-slate-50 rounded-xl p-3">
+      <div class="bg-slate-50 dark:bg-slate-700 rounded-xl p-3">
         <p class="text-xs text-slate-400">{% trans "Monthly Rent" %}</p>
         <p class="font-semibold text-sm mt-0.5">฿{{ profile.room.base_rent|floatformat:0 }}</p>
       </div>
-      <div class="bg-slate-50 rounded-xl p-3">
+      <div class="bg-slate-50 dark:bg-slate-700 rounded-xl p-3">
         <p class="text-xs text-slate-400">{% trans "Status" %}</p>
         <p class="font-semibold text-sm mt-0.5 capitalize">{{ profile.room.get_status_display }}</p>
       </div>
@@ -57,7 +57,7 @@
 
   <!-- Current bill card -->
   {% if current_bill %}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+  <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-2">
         <i class="fa-solid fa-receipt text-primary"></i>
@@ -88,7 +88,7 @@
         <span class="text-slate-500"><i class="fa-solid fa-droplet text-blue-500 text-xs mr-1"></i>{% trans "Water" %}</span>
         <span>฿{{ current_bill.water_amt|floatformat:0 }}</span>
       </div>
-      <div class="border-t border-slate-100 pt-2 flex justify-between font-bold text-base">
+      <div class="border-t border-slate-100 dark:border-slate-700 pt-2 flex justify-between font-bold text-base">
         <span>{% trans "Total" %}</span>
         <span class="text-primary">฿{{ current_bill.total|floatformat:0 }}</span>
       </div>
@@ -104,7 +104,7 @@
 
   <!-- Meter readings -->
   {% if latest_meter %}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+  <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
     <div class="flex items-center gap-2 mb-3">
       <i class="fa-solid fa-gauge-high text-primary"></i>
       <span class="font-semibold">{% trans "Latest Meter Reading" %}</span>
@@ -152,7 +152,7 @@
 
   <!-- Maintenance tickets -->
   {% if maintenance_tickets %}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+  <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-2">
         <i class="fa-solid fa-screwdriver-wrench text-primary"></i>
@@ -196,7 +196,7 @@
   {% endif %}
 
   <!-- Profile info -->
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+  <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-5">
     <div class="flex items-center gap-2 mb-3">
       <i class="fa-solid fa-user text-primary"></i>
       <span class="font-semibold">{% trans "My Profile" %}</span>

@@ -17,7 +17,14 @@ class ActiveDormitoryMiddleware:
 
     def __call__(self, request):
         request.active_dormitory = self._resolve(request)
-        return self.get_response(request)
+        
+        from apps.core.threadlocal import set_current_dormitory, clear_current_dormitory
+        set_current_dormitory(request.active_dormitory)
+        try:
+            response = self.get_response(request)
+        finally:
+            clear_current_dormitory()
+        return response
 
     @staticmethod
     def _resolve(request):

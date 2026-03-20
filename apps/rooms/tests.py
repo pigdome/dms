@@ -1,15 +1,17 @@
 from django.test import TestCase
 
 from apps.core.models import Dormitory, CustomUser
+from apps.core.threadlocal import dormitory_context
 from apps.rooms.models import Building, Floor, Room
 from apps.rooms.views import _dorm_rooms
 
 
 def _setup_dorm(name, prefix=''):
     dorm = Dormitory.objects.create(name=name, address=f'{name} Addr', invoice_prefix=prefix)
-    building = Building.objects.create(dormitory=dorm, name=f'{name} Building')
-    floor = Floor.objects.create(building=building, number=1)
-    room = Room.objects.create(floor=floor, number='101', base_rent=5000)
+    with dormitory_context(dorm):
+        building = Building.objects.create(name=f'{name} Building')
+        floor = Floor.objects.create(building=building, number=1)
+        room = Room.objects.create(floor=floor, number='101', base_rent=5000)
     return dorm, room
 
 

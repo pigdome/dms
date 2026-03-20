@@ -138,6 +138,17 @@ class SetupWizardView(View):
 
 @login_required
 @require_POST
+def theme_toggle_view(request):
+    """Toggle user theme between light and dark."""
+    from apps.core.models import CustomUser
+    user = request.user
+    user.theme = CustomUser.Theme.DARK if user.theme == CustomUser.Theme.LIGHT else CustomUser.Theme.LIGHT
+    user.save(update_fields=['theme'])
+    return redirect(request.POST.get('next') or request.META.get('HTTP_REFERER') or 'dashboard:index')
+
+
+@login_required
+@require_POST
 def property_switch_view(request):
     """Switch the active dormitory context for staff/owner users.
 
@@ -153,7 +164,7 @@ def property_switch_view(request):
                 pk=dormitory_id,
                 userdormitoryrole__user=request.user,
             )
-            request.session['active_dormitory_id'] = dorm.pk
+            request.session['active_dormitory_id'] = str(dorm.pk)
         except Dormitory.DoesNotExist:
             messages.error(request, _('You do not have access to that property.'))
 

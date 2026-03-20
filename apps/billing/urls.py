@@ -10,7 +10,7 @@ app_name = 'billing'
 urlpatterns = [
     path('', BillListView.as_view(), name='list'),
     path('export/', BillCSVExportView.as_view(), name='export'),
-    path('<int:pk>/', BillDetailView.as_view(), name='detail'),
+    path('<uuid:pk>/', BillDetailView.as_view(), name='detail'),
     path('settings/', BillingSettingsView.as_view(), name='settings'),
     path('webhook/tmr/', tmr_webhook, name='tmr_webhook'),
 ]

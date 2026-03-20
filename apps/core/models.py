@@ -1,8 +1,55 @@
+import json
+import uuid
+
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 
+class UUIDEncoder(json.JSONEncoder):
+    """JSON encoder that converts UUID objects to strings."""
+    def default(self, obj):
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        return super().default(obj)
+
+
+class TenantManager(models.Manager):
+    """Automatic filtering by the current thread-local dormitory."""
+    def get_queryset(self):
+        from apps.core.threadlocal import get_current_dormitory
+        dorm = get_current_dormitory()
+        qs = super().get_queryset()
+        if dorm:
+            # Handle both model instances and PKs
+            dorm_id = dorm.pk if hasattr(dorm, 'pk') else dorm
+            return qs.filter(dormitory_id=dorm_id)
+        return qs
+
+
+class TenantModelMixin(models.Model):
+    """Abstract base for models that belong to a dormitory (tenant)."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    dormitory = models.ForeignKey('core.Dormitory', on_delete=models.CASCADE, null=True, blank=True)
+
+    objects = TenantManager()
+    unscoped_objects = models.Manager()
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        # Safely check for dormitory_id to avoid "deferred field" errors on unsaved models
+        dorm_id = getattr(self, 'dormitory_id', None)
+        if not dorm_id:
+            from apps.core.threadlocal import get_current_dormitory
+            dorm = get_current_dormitory()
+            if dorm:
+                self.dormitory_id = dorm.pk if hasattr(dorm, 'pk') else dorm
+        super().save(*args, **kwargs)
+
+
 class Dormitory(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
     address = models.TextField()
     photo = models.ImageField(upload_to='dormitory/', blank=True, null=True)
@@ -23,13 +70,20 @@ class Dormitory(models.Model):
 
 
 class CustomUser(AbstractUser):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     class Role(models.TextChoices):
         SUPERADMIN = 'superadmin', 'Superadmin'
         OWNER = 'owner', 'Owner'
         STAFF = 'staff', 'Staff'
         TENANT = 'tenant', 'Tenant'
 
+    class Theme(models.TextChoices):
+        LIGHT = 'light', 'Light'
+        DARK = 'dark', 'Dark'
+
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.TENANT)
+    theme = models.CharField(max_length=10, choices=Theme.choices, default=Theme.LIGHT)
     dormitory = models.ForeignKey(
         Dormitory, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='users',
@@ -66,6 +120,7 @@ class CustomUser(AbstractUser):
 
 
 class UserDormitoryRole(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='dormitory_memberships')
     dormitory = models.ForeignKey(Dormitory, on_delete=models.CASCADE)
     role = models.CharField(max_length=20, choices=CustomUser.Role.choices, default=CustomUser.Role.STAFF)
@@ -78,11 +133,10 @@ class UserDormitoryRole(models.Model):
         return f'{self.user} @ {self.dormitory} ({self.role})'
 
 
-class ActivityLog(models.Model):
-    dormitory = models.ForeignKey(Dormitory, on_delete=models.CASCADE, related_name='activity_logs')
+class ActivityLog(TenantModelMixin):
     user = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=200)
-    detail = models.JSONField(default=dict, blank=True)
+    detail = models.JSONField(default=dict, blank=True, encoder=UUIDEncoder)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -9,7 +9,7 @@
 
   <!-- Header -->
   <div class="flex items-center gap-3">
-    <a href="{% url 'tenants:create' %}" class="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 shadow-sm text-slate-600 hover:text-primary">
+    <a href="{% url 'tenants:create' %}" class="w-9 h-9 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 shadow-sm text-slate-600 hover:text-primary">
       <i class="fa-solid fa-arrow-left text-sm"></i>
     </a>
     <h2 class="font-bold text-lg">{% trans "Import Tenants" %}</h2>
@@ -22,7 +22,7 @@
       <div class="text-sm text-blue-800">
         <p class="font-semibold mb-1">{% trans "File format" %}</p>
         <p>{% trans "Supports CSV (.csv) and Excel (.xlsx). First row must be column headers." %}</p>
-        <div class="mt-2 bg-white rounded-lg px-3 py-2 font-mono text-xs text-blue-700 border border-blue-100 overflow-x-auto">
+        <div class="mt-2 bg-white dark:bg-slate-800 rounded-lg px-3 py-2 font-mono text-xs text-blue-700 border border-blue-100 overflow-x-auto">
           {{ sample_headers }}
         </div>
         <ul class="mt-2 space-y-1 text-xs text-blue-700">
@@ -38,11 +38,11 @@
   </div>
 
   <!-- Upload form -->
-  <form method="post" enctype="multipart/form-data" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4">
+  <form method="post" enctype="multipart/form-data" class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm p-5 space-y-4">
     {% csrf_token %}
     <label class="flex flex-col gap-2">
       <span class="text-sm font-semibold text-slate-700">{% trans "Select File" %}</span>
-      <div class="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-primary/40 transition-colors" id="drop-zone">
+      <div class="border-2 border-dashed border-slate-200 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-primary/40 transition-colors" id="drop-zone">
         <i class="fa-solid fa-file-arrow-up text-slate-300 text-3xl mb-2"></i>
         <p class="text-sm text-slate-500" id="file-label">{% trans "Click to choose or drag & drop" %}</p>
         <p class="text-xs text-slate-400 mt-1">CSV, XLSX</p>

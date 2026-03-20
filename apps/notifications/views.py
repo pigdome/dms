@@ -60,8 +60,15 @@ class ParcelCreateView(View):
             carrier=carrier,
             notes=notes,
             logged_by=request.user,
-            notified_at=timezone.now(),  # mark as notified immediately
+            notified_at=None,
         )
+        
+        # Queue notification task
+        try:
+            from apps.notifications.tasks import send_parcel_notification_task
+            send_parcel_notification_task.delay(parcel.pk)
+        except Exception:
+            pass # logged_at is None, can be retried or shown as failed
         ActivityLog.objects.create(
             dormitory=dorm,
             user=request.user,
@@ -138,17 +145,14 @@ class BroadcastCreateView(View):
             detail={'broadcast_id': bc.pk, 'title': bc.title},
         )
 
-        # Send LINE push messages
+        # Send LINE push messages via background task
         try:
-            from apps.notifications.line import push_broadcast
-            sent = push_broadcast(bc)
-            if sent:
-                messages.success(request, _('Broadcast sent to %(n)s LINE users.') % {'n': sent})
-            else:
-                messages.success(request, _('Broadcast saved. No LINE IDs configured for target audience.'))
+            from apps.notifications.tasks import send_broadcast_task
+            send_broadcast_task.delay(bc.pk)
+            messages.success(request, _('Broadcast draft saved and delivery queued.'))
         except Exception:
-            messages.success(request, _('Broadcast saved (LINE delivery failed).'))
+            messages.warning(request, _('Broadcast saved, but background delivery could not be queued.'))
 
-        return redirect('notifications:broadcast')
+        return redirect('notifications:parcel_list') if 'room' in data else redirect('notifications:broadcast_list')
 
 

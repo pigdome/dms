@@ -1,9 +1,11 @@
+from decimal import Decimal
+
 from django.db import models, transaction
-from apps.core.models import Dormitory
+from apps.core.models import Dormitory, TenantModelMixin, UUIDEncoder
 from apps.rooms.models import Room
 
 
-class BillingSettings(models.Model):
+class BillingSettings(TenantModelMixin):
     class BillDay(models.IntegerChoices):
         FIRST = 1, '1st'
         FIFTH = 5, '5th'
@@ -20,10 +22,28 @@ class BillingSettings(models.Model):
     dunning_enabled = models.BooleanField(default=True)
 
     def __str__(self):
-        return f'Billing Settings - {self.dormitory.name}'
+        return f'Billing Settings - {self.dormitory.name if self.dormitory_id else "No Dorm"}'
 
 
-class Bill(models.Model):
+class ExtraChargeType(TenantModelMixin):
+    """
+    Owner-defined recurring charge types, e.g. Internet, Parking, Equipment rental.
+    Acts as a catalog — each dormitory can have its own list.
+    """
+    name = models.CharField(max_length=100)
+    description = models.CharField(max_length=255, blank=True)
+    default_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class Bill(TenantModelMixin):
     class Status(models.TextChoices):
         DRAFT = 'draft', 'Draft'
         SENT = 'sent', 'Sent'
@@ -31,11 +51,18 @@ class Bill(models.Model):
         OVERDUE = 'overdue', 'Overdue'
 
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='bills')
+    # Link to the MeterReading that generated the utility amounts (nullable for manual bills)
+    meter_reading = models.ForeignKey(
+        'rooms.MeterReading', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='bills',
+    )
     month = models.DateField(help_text='First day of billing month')
     invoice_number = models.CharField(max_length=30, unique=True, null=True, blank=True, default=None)
     base_rent = models.DecimalField(max_digits=10, decimal_places=2)
     water_amt = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     elec_amt = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    other_amt = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+                                     help_text='Sum of BillLineItem amounts (auto-updated by refresh_total)')
     total = models.DecimalField(max_digits=10, decimal_places=2)
     due_date = models.DateField()
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
@@ -46,14 +73,56 @@ class Bill(models.Model):
         unique_together = ['room', 'month']
         ordering = ['-month']
 
+    # ------------------------------------------------------------------
+    # Meter reading snapshot properties (read-through to linked reading)
+    # ------------------------------------------------------------------
+
+    @property
+    def water_prev(self):
+        return self.meter_reading.water_prev if self.meter_reading_id else Decimal('0')
+
+    @property
+    def water_curr(self):
+        return self.meter_reading.water_curr if self.meter_reading_id else Decimal('0')
+
+    @property
+    def elec_prev(self):
+        return self.meter_reading.elec_prev if self.meter_reading_id else Decimal('0')
+
+    @property
+    def elec_curr(self):
+        return self.meter_reading.elec_curr if self.meter_reading_id else Decimal('0')
+
+    @property
+    def water_units(self):
+        return self.water_curr - self.water_prev
+
+    @property
+    def elec_units(self):
+        return self.elec_curr - self.elec_prev
+
+    # ------------------------------------------------------------------
+    # Total management
+    # ------------------------------------------------------------------
+
+    def refresh_total(self):
+        """Recompute other_amt from line_items and update total. Call after adding/removing BillLineItems."""
+        from django.db.models import Sum
+        self.other_amt = self.line_items.aggregate(s=Sum('amount'))['s'] or Decimal('0')
+        self.total = self.base_rent + self.water_amt + self.elec_amt + self.other_amt
+        self.save(update_fields=['other_amt', 'total', 'updated_at'])
+
     def save(self, *args, **kwargs):
+        if self.room_id and not getattr(self, 'dormitory_id', None):
+            self.dormitory_id = self.room.dormitory_id
+
         if not self.invoice_number and self.room_id:
-            dorm = self.room.floor.building.dormitory
+            dorm = self.dormitory or self.room.floor.building.dormitory
             prefix = dorm.invoice_prefix or 'INV'
             ym = self.month.strftime('%y%m')
             with transaction.atomic():
                 seq = (
-                    Bill.objects.select_for_update()
+                    Bill.unscoped_objects.select_for_update()
                     .filter(room__floor__building__dormitory=dorm, month=self.month)
                     .exclude(pk=self.pk)
                     .count()
@@ -64,19 +133,44 @@ class Bill(models.Model):
     def __str__(self):
         return f'Bill {self.room} - {self.month.strftime("%Y-%m")} ({self.status})'
 
-    @property
-    def dormitory(self):
-        return self.room.dormitory
+
+class BillLineItem(TenantModelMixin):
+    """
+    An extra charge line item attached to a bill.
+    Created from ExtraChargeType catalog or added manually.
+    After adding/removing line items, call bill.refresh_total().
+    """
+    bill = models.ForeignKey(Bill, on_delete=models.CASCADE, related_name='line_items')
+    charge_type = models.ForeignKey(
+        ExtraChargeType, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='bill_items',
+    )
+    # Snapshot of charge name at billing time (so renaming ExtraChargeType won't change history)
+    description = models.CharField(max_length=200)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+
+    def __str__(self):
+        return f'{self.description}: ฿{self.amount}'
+
+    def save(self, *args, **kwargs):
+        if self.bill_id and not getattr(self, 'dormitory_id', None):
+            self.dormitory_id = self.bill.dormitory_id
+        super().save(*args, **kwargs)
 
 
-class Payment(models.Model):
+class Payment(TenantModelMixin):
     bill = models.OneToOneField(Bill, on_delete=models.CASCADE, related_name='payment')
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     tmr_ref = models.CharField(max_length=255, unique=True)
     idempotency_key = models.CharField(max_length=255, unique=True)
-    webhook_payload = models.JSONField(default=dict)
+    webhook_payload = models.JSONField(default=dict, encoder=UUIDEncoder)
     paid_at = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f'Payment {self.bill} - {self.amount}'
+
+    def save(self, *args, **kwargs):
+        if self.bill_id and not getattr(self, 'dormitory_id', None):
+            self.dormitory_id = self.bill.dormitory_id
+        super().save(*args, **kwargs)

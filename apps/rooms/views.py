@@ -53,179 +53,101 @@ class RoomDetailView(View):
 
 @method_decorator([login_required, staff_required], name='dispatch')
 class RoomCreateView(View):
-    def _context(self, user, data=None, dormitory=None):
-        dorm = dormitory or user.dormitory
-        floors = Floor.objects.filter(
-            building__dormitory=dorm
-        ).select_related('building')
-        return {
-            'floors': floors,
-            'status_choices': Room.Status.choices,
-            'form': SimpleForm(data or {}),
-        }
-
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
-        return render(request, 'rooms/form.html', self._context(request.user, dormitory=dorm))
+        from apps.rooms.forms import RoomForm
+        form = RoomForm(dormitory=dorm)
+        return render(request, 'rooms/form.html', {'form': form})
 
     def post(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
-        data = request.POST
-        floor_id = data.get('floor')
-        number = data.get('number', '').strip()
-        base_rent = data.get('base_rent', 0) or 0
-        status = data.get('status', Room.Status.VACANT)
-
-        errors = []
-        if not floor_id:
-            errors.append(_('Please select a floor.'))
-        if not number:
-            errors.append(_('Room number is required.'))
-
-        if errors:
-            for e in errors:
-                messages.error(request, e)
-            return render(request, 'rooms/form.html', self._context(request.user, data, dormitory=dorm))
-
-        floor = get_object_or_404(
-            Floor, pk=floor_id, building__dormitory=dorm
-        )
-        if Room.objects.filter(floor=floor, number=number).exists():
-            messages.error(request, _('Room number already exists on this floor.'))
-            return render(request, 'rooms/form.html', self._context(request.user, data, dormitory=dorm))
-
-        room = Room.objects.create(
-            floor=floor, number=number, base_rent=base_rent, status=status
-        )
-        ActivityLog.objects.create(
-            dormitory=dorm,
-            user=request.user,
-            action='room_created',
-            detail={'room_id': room.pk, 'room_number': room.number},
-        )
-        messages.success(request, _('Room created successfully.'))
-        return redirect('rooms:detail', pk=room.pk)
-
-
+        from apps.rooms.forms import RoomForm
+        form = RoomForm(request.POST, dormitory=dorm)
+        if form.is_valid():
+            room = form.save()
+            ActivityLog.objects.create(
+                dormitory=dorm,
+                user=request.user,
+                action='room_created',
+                detail={'room_id': room.pk, 'room_number': room.number},
+            )
+            messages.success(request, _('Room created successfully.'))
+            return redirect('rooms:detail', pk=room.pk)
+        
+        return render(request, 'rooms/form.html', {'form': form})
 @method_decorator([login_required, staff_required], name='dispatch')
 class RoomUpdateView(View):
-    def _context(self, user, room, data=None, dormitory=None):
-        dorm = dormitory or user.dormitory
-        floors = Floor.objects.filter(
-            building__dormitory=dorm
-        ).select_related('building')
-        form_data = data or {
-            'floor': str(room.floor_id),
-            'number': room.number,
-            'base_rent': str(room.base_rent),
-            'status': room.status,
-        }
-        return {
-            'object': room,
-            'floors': floors,
-            'status_choices': Room.Status.choices,
-            'form': SimpleForm(form_data),
-        }
-
     def get(self, request, pk):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         room = get_object_or_404(_dorm_rooms(request.user, dormitory=dorm), pk=pk)
-        return render(request, 'rooms/form.html', self._context(request.user, room, dormitory=dorm))
+        from apps.rooms.forms import RoomForm
+        form = RoomForm(instance=room, dormitory=dorm)
+        return render(request, 'rooms/form.html', {'form': form, 'object': room})
 
     def post(self, request, pk):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         room = get_object_or_404(_dorm_rooms(request.user, dormitory=dorm), pk=pk)
-        data = request.POST
-        floor_id = data.get('floor')
-        number = data.get('number', '').strip()
-        base_rent = data.get('base_rent', 0) or 0
-        status = data.get('status', room.status)
-
-        if not floor_id or not number:
-            messages.error(request, _('Please fill in all required fields.'))
-            return render(request, 'rooms/form.html', self._context(request.user, room, data, dormitory=dorm))
-
-        floor = get_object_or_404(
-            Floor, pk=floor_id, building__dormitory=dorm
-        )
-        # Check uniqueness (exclude current room)
-        if Room.objects.filter(floor=floor, number=number).exclude(pk=room.pk).exists():
-            messages.error(request, _('Room number already exists on this floor.'))
-            return render(request, 'rooms/form.html', self._context(request.user, room, data, dormitory=dorm))
-
-        room.floor = floor
-        room.number = number
-        room.base_rent = base_rent
-        room.status = status
-        room.save()
-        ActivityLog.objects.create(
-            dormitory=dorm,
-            user=request.user,
-            action='room_updated',
-            detail={'room_id': room.pk, 'room_number': room.number},
-        )
-        messages.success(request, _('Room updated successfully.'))
-        return redirect('rooms:detail', pk=room.pk)
+        from apps.rooms.forms import RoomForm
+        form = RoomForm(request.POST, instance=room, dormitory=dorm)
+        if form.is_valid():
+            room = form.save()
+            ActivityLog.objects.create(
+                dormitory=dorm,
+                user=request.user,
+                action='room_updated',
+                detail={'room_id': room.pk, 'room_number': room.number},
+            )
+            messages.success(request, _('Room updated successfully.'))
+            return redirect('rooms:detail', pk=room.pk)
+        
+        return render(request, 'rooms/form.html', {'form': form, 'object': room})
 
 
 @method_decorator([login_required, staff_required], name='dispatch')
 class MeterReadingCreateView(View):
-    def _context(self, user, data=None, selected_room_id=None, dormitory=None):
-        dorm = dormitory or user.dormitory
-        buildings = Building.objects.filter(dormitory=dorm)
-        rooms = _dorm_rooms(user, dormitory=dorm)
-        return {
-            'buildings': buildings,
-            'rooms': rooms,
-            'form': SimpleForm(data or {}),
-            'today': timezone.now().date().isoformat(),
-            'selected_room_id': selected_room_id or (data or {}).get('room', ''),
-        }
-
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
-        selected_room_id = request.GET.get('room', '')
-        return render(request, 'rooms/meter_reading.html',
-                      self._context(request.user, selected_room_id=selected_room_id, dormitory=dorm))
+        from apps.rooms.forms import MeterReadingForm
+        initial = {'reading_date': timezone.now().date()}
+        room_id = request.GET.get('room')
+        if room_id:
+            initial['room'] = room_id
+        
+        form = MeterReadingForm(dormitory=dorm, initial=initial)
+        buildings = Building.objects.filter(dormitory=dorm)
+        rooms = _dorm_rooms(request.user)
+        
+        return render(request, 'rooms/meter_reading.html', {
+            'form': form,
+            'today': timezone.now().date().isoformat(),
+            'buildings': buildings,
+            'rooms': rooms,
+        })
 
     def post(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
-        data = request.POST
-        room_id = data.get('room')
-        reading_date = data.get('reading_date')
-        water_prev = data.get('water_prev', 0) or 0
-        water_curr = data.get('water_curr')
-        elec_prev = data.get('elec_prev', 0) or 0
-        elec_curr = data.get('elec_curr')
-
-        if not room_id or not water_curr or not elec_curr or not reading_date:
-            messages.error(request, _('Please fill in all required fields.'))
-            return render(request, 'rooms/meter_reading.html', self._context(request.user, data, dormitory=dorm))
-
-        room = get_object_or_404(_dorm_rooms(request.user, dormitory=dorm), pk=room_id)
-
-        kwargs = {
-            'room': room,
-            'reading_date': reading_date,
-            'water_prev': water_prev,
-            'water_curr': water_curr,
-            'elec_prev': elec_prev,
-            'elec_curr': elec_curr,
-            'recorded_by': request.user,
-        }
-        if 'water_photo' in request.FILES:
-            kwargs['water_photo'] = request.FILES['water_photo']
-        if 'elec_photo' in request.FILES:
-            kwargs['elec_photo'] = request.FILES['elec_photo']
-
-        MeterReading.objects.create(**kwargs)
-        ActivityLog.objects.create(
-            dormitory=dorm,
-            user=request.user,
-            action='meter_reading_saved',
-            detail={'room_id': room.pk, 'room_number': room.number, 'date': reading_date},
-        )
-        messages.success(request, _('Meter reading saved successfully.'))
-        return redirect('rooms:detail', pk=room.pk)
+        from apps.rooms.forms import MeterReadingForm
+        form = MeterReadingForm(request.POST, request.FILES, dormitory=dorm)
+        
+        if form.is_valid():
+            reading = form.save()
+            ActivityLog.objects.create(
+                dormitory=dorm,
+                user=request.user,
+                action='meter_reading_logged',
+                detail={'reading_id': reading.pk, 'room_number': reading.room.number},
+            )
+            messages.success(request, _('Meter reading logged successfully.'))
+            return redirect('rooms:detail', pk=reading.room.pk)
+        
+        buildings = Building.objects.filter(dormitory=dorm)
+        rooms = _dorm_rooms(request.user)
+        
+        return render(request, 'rooms/meter_reading.html', {
+            'form': form,
+            'today': timezone.now().date().isoformat(),
+            'buildings': buildings,
+            'rooms': rooms,
+        })
 
 

@@ -10,14 +10,14 @@
   <h2 class="font-bold text-lg">{% trans "Bill History" %}</h2>
 
   {% if not all_bills %}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 text-center">
+  <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-8 text-center">
     <i class="fa-solid fa-receipt text-slate-300 text-4xl mb-3"></i>
     <p class="text-slate-500 text-sm">{% trans "No bills found." %}</p>
   </div>
   {% else %}
   {% for bill in all_bills %}
   <a href="{% url 'tenant:bill_detail' bill.pk %}"
-     class="block bg-white rounded-2xl shadow-sm border border-slate-100 p-4 hover:border-primary/30 transition-colors">
+     class="block bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-4 hover:border-primary/30 transition-colors">
     <div class="flex items-center justify-between mb-2">
       <div>
         <p class="font-semibold text-sm">{{ bill.month|date:"F Y" }}</p>
@@ -45,7 +45,7 @@
         <p class="font-semibold text-slate-800">฿{{ bill.water_amt|floatformat:0 }}</p>
       </div>
     </div>
-    <div class="flex items-center justify-between border-t border-slate-100 pt-2">
+    <div class="flex items-center justify-between border-t border-slate-100 dark:border-slate-700 pt-2">
       <span class="text-xs text-slate-400">
         {% if bill.due_date %}<i class="fa-regular fa-calendar mr-1"></i>{% trans "Due" %}: {{ bill.due_date|date:"d M Y" }}{% endif %}
       </span>

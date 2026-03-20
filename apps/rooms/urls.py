@@ -12,7 +12,7 @@ app_name = 'rooms'
 urlpatterns = [
     path('', RoomListView.as_view(), name='list'),
     path('create/', RoomCreateView.as_view(), name='create'),
-    path('<int:pk>/', RoomDetailView.as_view(), name='detail'),
-    path('<int:pk>/edit/', RoomUpdateView.as_view(), name='update'),
+    path('<uuid:pk>/', RoomDetailView.as_view(), name='detail'),
+    path('<uuid:pk>/edit/', RoomUpdateView.as_view(), name='update'),
     path('meter-reading/', MeterReadingCreateView.as_view(), name='meter_reading'),
 ]

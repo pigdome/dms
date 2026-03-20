@@ -17,34 +17,18 @@
     </a>
   </div>
 
-  <!-- Status filter tabs -->
-  <div class="flex gap-1 overflow-x-auto pb-1 no-scrollbar border-b border-slate-200">
-    <a href="{% url 'maintenance:list' %}{% if search_query %}?q={{ search_query }}{% endif %}"
-       class="flex-shrink-0 px-3 py-2.5 text-sm font-medium border-b-2
-              {% if not status_filter %}border-primary text-primary{% else %}border-transparent text-slate-500{% endif %}">
-      {% trans "All" %}
-    </a>
-    <a href="?status=new{% if search_query %}&q={{ search_query }}{% endif %}"
-       class="flex-shrink-0 px-3 py-2.5 text-sm font-medium border-b-2
-              {% if status_filter == 'new' %}border-primary text-primary{% else %}border-transparent text-slate-500{% endif %}">
-      {% trans "New" %}
-    </a>
-    <a href="?status=in_progress{% if search_query %}&q={{ search_query }}{% endif %}"
-       class="flex-shrink-0 px-3 py-2.5 text-sm font-medium border-b-2
-              {% if status_filter == 'in_progress' %}border-primary text-primary{% else %}border-transparent text-slate-500{% endif %}">
-      {% trans "In Progress" %}
-    </a>
-    <a href="?status=waiting_parts{% if search_query %}&q={{ search_query }}{% endif %}"
-       class="flex-shrink-0 px-3 py-2.5 text-sm font-medium border-b-2
-              {% if status_filter == 'waiting_parts' %}border-primary text-primary{% else %}border-transparent text-slate-500{% endif %}">
-      {% trans "Waiting Parts" %}
-    </a>
-    <a href="?status=completed{% if search_query %}&q={{ search_query }}{% endif %}"
-       class="flex-shrink-0 px-3 py-2.5 text-sm font-medium border-b-2
-              {% if status_filter == 'completed' %}border-primary text-primary{% else %}border-transparent text-slate-500{% endif %}">
-      {% trans "Completed" %}
-    </a>
-  </div>
+  <!-- Filters row -->
+  <form method="get" class="flex gap-2">
+    <select name="status" onchange="this.form.submit()"
+            class="text-sm h-9 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 focus:ring-primary focus:border-primary">
+      <option value="">{% trans "All statuses" %}</option>
+      <option value="new" {% if status_filter == 'new' %}selected{% endif %}>{% trans "New" %}</option>
+      <option value="in_progress" {% if status_filter == 'in_progress' %}selected{% endif %}>{% trans "In Progress" %}</option>
+      <option value="waiting_parts" {% if status_filter == 'waiting_parts' %}selected{% endif %}>{% trans "Waiting Parts" %}</option>
+      <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>{% trans "Completed" %}</option>
+    </select>
+    {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
+  </form>
 
   <!-- Search -->
   <form method="get" class="relative">
@@ -54,7 +38,7 @@
     </div>
     <input type="text" name="q" value="{{ search_query }}"
            placeholder="{% trans 'Search room or description...' %}"
-           class="block w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm
+           class="block w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-sm
                   placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary shadow-sm">
   </form>
 
@@ -63,7 +47,7 @@
   <div class="space-y-3">
     {% for ticket in tickets %}
     <a href="{% url 'maintenance:detail' ticket.pk %}"
-       class="block bg-white rounded-xl border border-slate-100 shadow-sm p-4 hover:border-primary/40 transition-colors
+       class="block bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-4 hover:border-primary/40 transition-colors
               {% if ticket.status == 'completed' %}opacity-75{% endif %}">
       <div class="flex items-start gap-3">
         <!-- Photo or icon -->
@@ -102,7 +86,7 @@
     {% endfor %}
   </div>
   {% else %}
-  <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-8 text-center">
+  <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-8 text-center">
     <i class="fa-solid fa-screwdriver-wrench text-3xl text-slate-300 mb-3"></i>
     {% if search_query or status_filter %}
     <p class="text-slate-500 font-medium">{% trans "No tickets match your filter." %}</p>

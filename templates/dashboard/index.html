@@ -18,7 +18,7 @@
 
   <!-- Property switcher (owners with multiple dormitories) -->
   {% if owned_dormitories|length > 1 %}
-  <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-1 flex gap-1">
+  <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-1 flex gap-1">
     {% for dorm in owned_dormitories %}
     <form method="post" action="{% url 'core:property_switch' %}" class="flex-1">
       {% csrf_token %}
@@ -39,7 +39,7 @@
     <h2 class="text-base font-bold text-slate-800 mb-3">{% trans "Monthly Overview" %}</h2>
     <div class="grid grid-cols-2 gap-3">
 
-      <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+      <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
         <div class="flex items-center gap-2 mb-2">
           <i class="fa-solid fa-coins text-primary"></i>
           <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Revenue" %}</p>
@@ -47,7 +47,7 @@
         <p class="text-xl font-bold">฿{{ total_income|floatformat:0 }}</p>
       </div>
 
-      <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+      <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
         <div class="flex items-center gap-2 mb-2">
           <i class="fa-solid fa-clock text-amber-500"></i>
           <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Overdue" %}</p>
@@ -56,7 +56,7 @@
         <p class="text-[10px] text-slate-400">{% trans "rooms" %}</p>
       </div>
 
-      <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+      <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
         <div class="flex items-center gap-2 mb-2">
           <i class="fa-solid fa-door-open text-indigo-500"></i>
           <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Vacant" %}</p>
@@ -65,7 +65,7 @@
         <p class="text-[10px] text-slate-400">{% trans "rooms" %}</p>
       </div>
 
-      <div class="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+      <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
         <div class="flex items-center gap-2 mb-2">
           <i class="fa-solid fa-screwdriver-wrench text-rose-500"></i>
           <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Tickets" %}</p>
@@ -82,28 +82,28 @@
     <h2 class="text-base font-bold text-slate-800 mb-3">{% trans "Quick Actions" %}</h2>
     <div class="grid grid-cols-4 gap-2">
       <a href="{% url 'rooms:meter_reading' %}"
-         class="flex flex-col items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 active:scale-95 transition-transform">
+         class="flex flex-col items-center gap-2 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 active:scale-95 transition-transform">
         <div class="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center">
           <i class="fa-solid fa-gauge-high text-2xl"></i>
         </div>
         <span class="text-[11px] font-bold text-center leading-tight">{% trans "Meters" %}</span>
       </a>
       <a href="{% url 'notifications:parcel_log' %}"
-         class="flex flex-col items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 active:scale-95 transition-transform">
+         class="flex flex-col items-center gap-2 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 active:scale-95 transition-transform">
         <div class="w-12 h-12 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center">
           <i class="fa-solid fa-box text-2xl"></i>
         </div>
         <span class="text-[11px] font-bold text-center leading-tight">{% trans "Parcels" %}</span>
       </a>
       <a href="{% url 'maintenance:list' %}"
-         class="flex flex-col items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 active:scale-95 transition-transform">
+         class="flex flex-col items-center gap-2 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 active:scale-95 transition-transform">
         <div class="w-12 h-12 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center">
           <i class="fa-solid fa-screwdriver-wrench text-2xl"></i>
         </div>
         <span class="text-[11px] font-bold text-center leading-tight">{% trans "Repair" %}</span>
       </a>
       <a href="{% url 'notifications:broadcast' %}"
-         class="flex flex-col items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 active:scale-95 transition-transform">
+         class="flex flex-col items-center gap-2 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 active:scale-95 transition-transform">
         <div class="w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
           <i class="fa-solid fa-bullhorn text-2xl"></i>
         </div>
@@ -116,7 +116,7 @@
   <section class="pb-2">
     <h2 class="text-base font-bold text-slate-800 mb-3">{% trans "Recent Activity" %}</h2>
     {% if recent_activity %}
-    <div class="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
       {% for log in recent_activity %}
       <div class="p-3 flex items-center gap-3 {% if not forloop.last %}border-b border-slate-50{% endif %}">
         <div class="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -130,7 +130,7 @@
       {% endfor %}
     </div>
     {% else %}
-    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-6 text-center text-slate-400 text-sm">
+    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-6 text-center text-slate-400 text-sm">
       {% trans "No recent activity." %}
     </div>
     {% endif %}

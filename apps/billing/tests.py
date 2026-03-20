@@ -12,6 +12,7 @@ from apps.billing.services import (
     get_dunning_trigger_dates,
     mark_overdue_bills,
 )
+from apps.core.threadlocal import dormitory_context
 
 
 # ---------------------------------------------------------------------------
@@ -24,12 +25,20 @@ class CalculateBillTests(SimpleTestCase):
         self.assertEqual(result['base_rent'], Decimal('5000'))
         self.assertEqual(result['water_amt'], Decimal('180'))
         self.assertEqual(result['elec_amt'], Decimal('140'))
+        self.assertEqual(result['other_amt'], Decimal('0'))
         self.assertEqual(result['total'], Decimal('5320'))
+
+    def test_calculate_bill_with_extra_charges(self):
+        result = calculate_bill(base_rent=5000, water_units=10, elec_units=20,
+                                water_rate=18, elec_rate=7, extra_amt=500)
+        self.assertEqual(result['other_amt'], Decimal('500'))
+        self.assertEqual(result['total'], Decimal('5820'))
 
     def test_calculate_bill_zero_utilities(self):
         result = calculate_bill(base_rent=3000, water_units=0, elec_units=0, water_rate=18, elec_rate=7)
         self.assertEqual(result['water_amt'], Decimal('0'))
         self.assertEqual(result['elec_amt'], Decimal('0'))
+        self.assertEqual(result['other_amt'], Decimal('0'))
         self.assertEqual(result['total'], Decimal('3000'))
 
     def test_calculate_bill_decimal_precision(self):
@@ -87,25 +96,28 @@ class BillInvoiceNumberTests(TestCase):
         cls.dorm = Dormitory.objects.create(
             name='Test Dorm', address='Test Addr', invoice_prefix='T01'
         )
-        building = Building.objects.create(dormitory=cls.dorm, name='Building 1')
-        floor = Floor.objects.create(building=building, number=1)
-        cls.room1 = Room.objects.create(floor=floor, number='101', base_rent=5000)
-        cls.room2 = Room.objects.create(floor=floor, number='102', base_rent=5000)
+        with dormitory_context(cls.dorm):
+            building = Building.objects.create(name='Building 1')
+            floor = Floor.objects.create(building=building, number=1)
+            cls.room1 = Room.objects.create(floor=floor, number='101', base_rent=5000)
+            cls.room2 = Room.objects.create(floor=floor, number='102', base_rent=5000)
 
         cls.dorm2 = Dormitory.objects.create(
             name='Other Dorm', address='Other Addr', invoice_prefix='X99'
         )
-        building2 = Building.objects.create(dormitory=cls.dorm2, name='Building X')
-        floor2 = Floor.objects.create(building=building2, number=1)
-        cls.room_dorm2 = Room.objects.create(floor=floor2, number='101', base_rent=4000)
+        with dormitory_context(cls.dorm2):
+            building2 = Building.objects.create(name='Building X')
+            floor2 = Floor.objects.create(building=building2, number=1)
+            cls.room_dorm2 = Room.objects.create(floor=floor2, number='101', base_rent=4000)
 
     def _make_bill(self, room, month, **kwargs):
         from apps.billing.models import Bill
-        return Bill.objects.create(
-            room=room, month=month, base_rent=5000,
-            total=5000, due_date=date(month.year, month.month, 25),
-            **kwargs
-        )
+        with dormitory_context(room.dormitory):
+            return Bill.objects.create(
+                room=room, month=month, base_rent=5000,
+                total=5000, due_date=date(month.year, month.month, 25),
+                **kwargs
+            )
 
     def test_invoice_number_format(self):
         bill = self._make_bill(self.room1, date(2025, 3, 1))
@@ -255,7 +267,7 @@ class GenerateBillsServiceTests(TestCase):
     def test_utility_amounts_from_meter_reading(self):
         from apps.rooms.models import MeterReading
         month = date(2026, 1, 1)
-        MeterReading.objects.create(
+        reading = MeterReading.objects.create(
             room=self.room_occ,
             water_prev=100, water_curr=110,   # 10 units × 18 = 180
             elec_prev=200, elec_curr=220,      # 20 units × 7  = 140
@@ -268,6 +280,15 @@ class GenerateBillsServiceTests(TestCase):
         self.assertEqual(bill.water_amt, Decimal('180.00'))
         self.assertEqual(bill.elec_amt, Decimal('140.00'))
         self.assertEqual(bill.total, Decimal('5320.00'))
+        # Verify meter_reading is linked
+        self.assertEqual(bill.meter_reading, reading)
+        # Verify meter snapshot properties
+        self.assertEqual(bill.water_prev, Decimal('100'))
+        self.assertEqual(bill.water_curr, Decimal('110'))
+        self.assertEqual(bill.water_units, Decimal('10'))
+        self.assertEqual(bill.elec_prev, Decimal('200'))
+        self.assertEqual(bill.elec_curr, Decimal('220'))
+        self.assertEqual(bill.elec_units, Decimal('20'))
 
     def test_no_meter_reading_yields_zero_utilities(self):
         month = date(2026, 2, 1)
@@ -290,6 +311,66 @@ class GenerateBillsServiceTests(TestCase):
         self.assertEqual(len(bills), 1)
         # bill_day=1 → bill_date = 2026-04-01, grace_days=5 → due = 2026-04-06
         self.assertEqual(bills[0].due_date, date(2026, 4, 6))
+
+
+# ---------------------------------------------------------------------------
+# ExtraChargeType + BillLineItem + refresh_total tests
+# ---------------------------------------------------------------------------
+
+class BillLineItemTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill, BillingSettings, ExtraChargeType
+
+        dorm = Dormitory.objects.create(name='LI Dorm', address='Addr')
+        building = Building.objects.create(dormitory=dorm, name='B')
+        floor = Floor.objects.create(building=building, number=1)
+        cls.room = Room.objects.create(floor=floor, number='101', base_rent=5000)
+        BillingSettings.objects.create(dormitory=dorm, bill_day=1, grace_days=5,
+                                        elec_rate=7, water_rate=18)
+        cls.bill = Bill.objects.create(
+            room=cls.room, month=date(2026, 1, 1),
+            base_rent=5000, water_amt=180, elec_amt=140,
+            total=5320, due_date=date(2026, 1, 6),
+        )
+        cls.charge_type = ExtraChargeType.objects.create(
+            dormitory=dorm, name='Internet', default_amount=300,
+        )
+
+    def test_add_line_item_and_refresh_total(self):
+        from apps.billing.models import BillLineItem
+        BillLineItem.objects.create(
+            bill=self.bill,
+            charge_type=self.charge_type,
+            description='Internet - Jan 2026',
+            amount=Decimal('300'),
+        )
+        self.bill.refresh_total()
+        self.bill.refresh_from_db()
+        self.assertEqual(self.bill.other_amt, Decimal('300'))
+        self.assertEqual(self.bill.total, Decimal('5620'))
+
+    def test_multiple_line_items(self):
+        from apps.billing.models import BillLineItem, Bill
+        bill2 = Bill.objects.create(
+            room=self.room, month=date(2026, 2, 1),
+            base_rent=5000, water_amt=0, elec_amt=0,
+            total=5000, due_date=date(2026, 2, 6),
+        )
+        BillLineItem.objects.create(bill=bill2, description='Internet', amount=Decimal('300'))
+        BillLineItem.objects.create(bill=bill2, description='Parking', amount=Decimal('200'))
+        bill2.refresh_total()
+        bill2.refresh_from_db()
+        self.assertEqual(bill2.other_amt, Decimal('500'))
+        self.assertEqual(bill2.total, Decimal('5500'))
+
+    def test_bill_without_meter_reading_returns_zero_snapshot(self):
+        self.assertIsNone(self.bill.meter_reading)
+        self.assertEqual(self.bill.water_prev, Decimal('0'))
+        self.assertEqual(self.bill.elec_curr, Decimal('0'))
+        self.assertEqual(self.bill.water_units, Decimal('0'))
 
 
 # ---------------------------------------------------------------------------
@@ -510,13 +591,14 @@ class BillListViewTests(TestCase):
 
     def test_list_contains_both_bills(self):
         self._login()
-        resp = self.client.get(reverse('billing:list'))
+        # Pass month=all to override the default current-month filter
+        resp = self.client.get(reverse('billing:list'), {'month': ''})
         self.assertIn(self.bill_paid, resp.context['bills'])
         self.assertIn(self.bill_overdue, resp.context['bills'])
 
     def test_filter_by_status(self):
         self._login()
-        resp = self.client.get(reverse('billing:list'), {'status': 'paid'})
+        resp = self.client.get(reverse('billing:list'), {'status': 'paid', 'month': ''})
         bills = list(resp.context['bills'])
         self.assertIn(self.bill_paid, bills)
         self.assertNotIn(self.bill_overdue, bills)

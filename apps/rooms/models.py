@@ -1,17 +1,17 @@
 from django.db import models
-from apps.core.models import Dormitory, CustomUser
+from apps.core.models import Dormitory, CustomUser, TenantModelMixin
 
 
-class Building(models.Model):
-    dormitory = models.ForeignKey(Dormitory, on_delete=models.CASCADE, related_name='buildings')
+class Building(TenantModelMixin):
     name = models.CharField(max_length=100)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f'{self.dormitory.name} - {self.name}'
+        dorm_id = getattr(self, 'dormitory_id', None)
+        return f'{self.dormitory.name if dorm_id else "No Dorm"} - {self.name}'
 
 
-class Floor(models.Model):
+class Floor(TenantModelMixin):
     building = models.ForeignKey(Building, on_delete=models.CASCADE, related_name='floors')
     number = models.PositiveIntegerField()
 
@@ -22,8 +22,13 @@ class Floor(models.Model):
     def __str__(self):
         return f'{self.building.name} Floor {self.number}'
 
+    def save(self, *args, **kwargs):
+        if self.building_id and not getattr(self, 'dormitory_id', None):
+            self.dormitory_id = self.building.dormitory_id
+        super().save(*args, **kwargs)
 
-class Room(models.Model):
+
+class Room(TenantModelMixin):
     class Status(models.TextChoices):
         OCCUPIED = 'occupied', 'Occupied'
         VACANT = 'vacant', 'Vacant'
@@ -43,12 +48,13 @@ class Room(models.Model):
     def __str__(self):
         return f'Room {self.number} - {self.floor}'
 
-    @property
-    def dormitory(self):
-        return self.floor.building.dormitory
+    def save(self, *args, **kwargs):
+        if self.floor_id and not self.dormitory_id:
+            self.dormitory_id = self.floor.dormitory_id
+        super().save(*args, **kwargs)
 
 
-class MeterReading(models.Model):
+class MeterReading(TenantModelMixin):
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='meter_readings')
     water_prev = models.DecimalField(max_digits=10, decimal_places=2)
     water_curr = models.DecimalField(max_digits=10, decimal_places=2)
@@ -65,6 +71,11 @@ class MeterReading(models.Model):
 
     def __str__(self):
         return f'Meter {self.room} - {self.reading_date}'
+
+    def save(self, *args, **kwargs):
+        if self.room_id and not self.dormitory_id:
+            self.dormitory_id = self.room.dormitory_id
+        super().save(*args, **kwargs)
 
     @property
     def water_units(self):

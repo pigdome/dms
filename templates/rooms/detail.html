@@ -45,7 +45,7 @@
                     {{ room.get_status_display }}
                 </span>
             </div>
-            <div class="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-3">
+            <div class="border-t border-slate-100 dark:border-slate-700 dark:border-slate-800 pt-4 space-y-3">
                 <div class="flex justify-between text-sm">
                     <span class="text-slate-500">{% trans "Base Rent" %}</span>
                     <span class="font-semibold">฿{{ room.base_rent|floatformat:0 }}/{% trans "month" %}</span>
@@ -90,7 +90,7 @@
                 <a href="{% url 'rooms:meter_reading' %}?room={{ room.pk }}" class="text-primary text-xs font-medium">{% trans "Add Reading" %}</a>
             </div>
             {% for reading in meter_readings %}
-            <div class="py-2 {% if not forloop.last %}border-b border-slate-100 dark:border-slate-800{% endif %}">
+            <div class="py-2 {% if not forloop.last %}border-b border-slate-100 dark:border-slate-700 dark:border-slate-800{% endif %}">
                 <div class="flex justify-between text-sm mb-1">
                     <span class="text-slate-500">{{ reading.reading_date }}</span>
                     <span class="text-xs text-slate-400">{{ reading.recorded_by.username }}</span>
@@ -118,7 +118,7 @@
                 <a href="{% url 'maintenance:list' %}?room={{ room.pk }}" class="text-primary text-xs font-medium">{% trans "View All" %}</a>
             </div>
             {% for ticket in maintenance_tickets %}
-            <a href="{% url 'maintenance:detail' ticket.pk %}" class="flex items-center justify-between py-2 {% if not forloop.last %}border-b border-slate-100 dark:border-slate-800{% endif %}">
+            <a href="{% url 'maintenance:detail' ticket.pk %}" class="flex items-center justify-between py-2 {% if not forloop.last %}border-b border-slate-100 dark:border-slate-700 dark:border-slate-800{% endif %}">
                 <div>
                     <p class="text-sm font-medium">{{ ticket.description|truncatechars:40 }}</p>
                     <p class="text-xs text-slate-400">{{ ticket.created_at|date:"d M Y" }}</p>

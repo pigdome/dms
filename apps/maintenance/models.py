@@ -1,9 +1,9 @@
 from django.db import models
-from apps.core.models import CustomUser
+from apps.core.models import CustomUser, TenantModelMixin
 from apps.rooms.models import Room
 
 
-class MaintenanceTicket(models.Model):
+class MaintenanceTicket(TenantModelMixin):
     class Status(models.TextChoices):
         NEW = 'new', 'New'
         IN_PROGRESS = 'in_progress', 'In Progress'
@@ -24,12 +24,13 @@ class MaintenanceTicket(models.Model):
     def __str__(self):
         return f'Ticket #{self.pk} - Room {self.room.number} ({self.status})'
 
-    @property
-    def dormitory(self):
-        return self.room.dormitory
+    def save(self, *args, **kwargs):
+        if self.room_id and not getattr(self, 'dormitory_id', None):
+            self.dormitory_id = self.room.dormitory_id
+        super().save(*args, **kwargs)
 
 
-class TicketPhoto(models.Model):
+class TicketPhoto(TenantModelMixin):
     class Stage(models.TextChoices):
         ISSUE = 'issue', 'Issue'
         COMPLETION = 'completion', 'Completion'
@@ -39,8 +40,13 @@ class TicketPhoto(models.Model):
     stage = models.CharField(max_length=20, choices=Stage.choices)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    def save(self, *args, **kwargs):
+        if self.ticket_id and not self.dormitory_id:
+            self.dormitory_id = self.ticket.dormitory_id
+        super().save(*args, **kwargs)
 
-class TicketStatusHistory(models.Model):
+
+class TicketStatusHistory(TenantModelMixin):
     ticket = models.ForeignKey(MaintenanceTicket, on_delete=models.CASCADE, related_name='status_history')
     status = models.CharField(max_length=20, choices=MaintenanceTicket.Status.choices)
     changed_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True)
@@ -49,3 +55,8 @@ class TicketStatusHistory(models.Model):
 
     class Meta:
         ordering = ['changed_at']
+
+    def save(self, *args, **kwargs):
+        if self.ticket_id and not self.dormitory_id:
+            self.dormitory_id = self.ticket.dormitory_id
+        super().save(*args, **kwargs)

@@ -26,7 +26,7 @@ ok "Virtual environment activated."
 
 # ─── Run seed data ───────────────────────────────────────────────────────────
 waiting "Seeding development data..."
-python manage.py seed_data
+python manage.py seed_data --clear
 ok "Seed data complete."
 
 # ─── Fix admin role ───────────────────────────────────────────────────────────

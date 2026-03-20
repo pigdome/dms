@@ -24,7 +24,7 @@
     </div>
     <input type="text" name="q" value="{{ search_query }}"
            placeholder="{% trans 'Search by name, username, room...' %}"
-           class="block w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm
+           class="block w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-sm
                   placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary shadow-sm">
   </form>
 
@@ -33,7 +33,7 @@
   <div class="space-y-3">
     {% for profile in tenants %}
     <a href="{% url 'tenants:detail' profile.pk %}"
-       class="block bg-white rounded-xl border border-slate-100 shadow-sm p-4 hover:border-primary/40 transition-colors">
+       class="block bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-4 hover:border-primary/40 transition-colors">
       <div class="flex items-center gap-3">
         <div class="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
           <i class="fa-solid fa-user text-lg"></i>
@@ -62,7 +62,7 @@
     {% endfor %}
   </div>
   {% else %}
-  <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-8 text-center">
+  <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-8 text-center">
     <i class="fa-solid fa-users text-3xl text-slate-300 mb-3"></i>
     {% if search_query %}
     <p class="text-slate-500 font-medium">{% trans "No tenants found for" %} "{{ search_query }}"</p>

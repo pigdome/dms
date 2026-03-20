@@ -181,6 +181,35 @@ notify:     Parcel(room_fk, photo, carrier, notes, notified_at, logged_by)
 
 ---
 
+## UI / Frontend Best Practices
+
+### Dark Mode
+- Tailwind ใช้ `darkMode: 'class'` (อยู่ใน `base.html` และ `base_tenant.html`) — **ไม่ใช้ media strategy**
+- `<html>` tag set class `dark` ตาม `request.user.theme` (`CustomUser.theme = 'light' | 'dark'`)
+- Toggle ผ่าน `POST /core/theme/toggle/` — ปุ่มอยู่ใน header ทั้งสอง base templates
+- **ทุก template ใหม่ต้องมี dark: variant คู่กับ light color เสมอ:**
+
+| Light class | Dark pair ที่ต้องใส่ |
+|---|---|
+| `bg-white` | `dark:bg-slate-800` |
+| `bg-slate-50` | `dark:bg-slate-700` |
+| `bg-slate-100` | `dark:bg-slate-700` |
+| `border-slate-100` | `dark:border-slate-700` |
+| `border-slate-200` | `dark:border-slate-600` |
+
+- ตรวจหา missing dark class ด้วย: `grep -rn 'bg-white\|bg-slate-50' templates/ | grep -v 'dark:bg-'`
+
+### Card / Section Layout
+- Section แต่ละ block ต้องเป็น card แยก: `bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm p-4`
+- **ห้ามใช้ `border-y` แบบ full-width** ที่ชิดขอบจอ — ผู้ใช้มองดูไม่สวย
+
+### Filter UI
+- Status filter ใช้ `<select onchange="this.form.submit()">` — ไม่ใช้ pill chips หรือ tab underline
+- List ที่มี filter วันที่ (เช่น Bills) ให้ default = เดือนปัจจุบัน (`now.strftime('%Y-%m')`)
+- ปุ่ม "Clear" แสดงเฉพาะเมื่อ filter ต่างจาก default (`{% if status_filter or month_filter != default_month %}`)
+
+---
+
 ## Out of Scope
 - ระบบบัญชี/ภาษีเต็มรูปแบบ
 - IoT / Hardware integration

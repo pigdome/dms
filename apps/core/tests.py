@@ -90,7 +90,7 @@ class ActiveDormitoryMiddlewareTests(_DormFixture, TestCase):
         mw.process_request(request)
         request.session.save()
         if session_dorm_id is not None:
-            request.session['active_dormitory_id'] = session_dorm_id
+            request.session['active_dormitory_id'] = str(session_dorm_id)
             request.session.save()
         return request
 
@@ -127,7 +127,7 @@ class PropertySwitchViewTests(_DormFixture, TestCase):
     def test_switch_to_accessible_dormitory(self):
         resp = self.client.post('/property/switch/', {'dormitory_id': self.dorm2.pk, 'next': '/dashboard/'})
         self.assertRedirects(resp, '/dashboard/', fetch_redirect_response=False)
-        self.assertEqual(self.client.session.get('active_dormitory_id'), self.dorm2.pk)
+        self.assertEqual(self.client.session.get('active_dormitory_id'), str(self.dorm2.pk))
 
     def test_switch_to_inaccessible_dormitory_is_rejected(self):
         stranger = Dormitory.objects.create(name='Stranger', address='X', invoice_prefix='X01')

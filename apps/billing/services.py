@@ -3,15 +3,27 @@ from datetime import date, timedelta
 import calendar
 
 
-def calculate_bill(base_rent, water_units, elec_units, water_rate, elec_rate):
-    """Calculate total bill amount."""
+def calculate_bill(base_rent, water_units, elec_units, water_rate, elec_rate, extra_amt=0):
+    """
+    Calculate total bill amount.
+
+    Args:
+        base_rent:   monthly rent
+        water_units: units consumed (curr - prev)
+        elec_units:  units consumed (curr - prev)
+        water_rate:  rate per unit
+        elec_rate:   rate per unit
+        extra_amt:   sum of extra charge line items (default 0)
+    """
     water_amt = Decimal(str(water_units)) * Decimal(str(water_rate))
     elec_amt = Decimal(str(elec_units)) * Decimal(str(elec_rate))
-    total = Decimal(str(base_rent)) + water_amt + elec_amt
+    other_amt = Decimal(str(extra_amt))
+    total = Decimal(str(base_rent)) + water_amt + elec_amt + other_amt
     return {
         'base_rent': Decimal(str(base_rent)),
         'water_amt': water_amt,
         'elec_amt': elec_amt,
+        'other_amt': other_amt,
         'total': total,
     }
 
@@ -19,14 +31,12 @@ def calculate_bill(base_rent, water_units, elec_units, water_rate, elec_rate):
 def calculate_prorated_rent(base_rent, move_in_date, billing_month):
     """Calculate pro-rated rent for partial month occupancy."""
     days_in_month = calendar.monthrange(billing_month.year, billing_month.month)[1]
-    # First day of next month
     if billing_month.month == 12:
         month_end = date(billing_month.year + 1, 1, 1)
     else:
         month_end = date(billing_month.year, billing_month.month + 1, 1)
     month_start = date(billing_month.year, billing_month.month, 1)
 
-    # Days occupied in the billing month
     occupied_from = max(move_in_date, month_start)
     days_occupied = (month_end - occupied_from).days
     days_occupied = max(0, min(days_occupied, days_in_month))
@@ -40,7 +50,8 @@ def generate_bills_for_dormitory(dormitory, month: date) -> list:
     Create draft bills for all occupied rooms in *dormitory* for *month*.
 
     - Skips rooms that already have a bill for this month.
-    - Uses the latest MeterReading recorded in that month for elec/water amounts.
+    - Links the latest MeterReading for that month to Bill.meter_reading.
+    - Uses water_units / elec_units from the linked MeterReading.
     - Returns the list of newly created Bill objects.
     """
     from django.db import transaction
@@ -66,7 +77,7 @@ def generate_bills_for_dormitory(dormitory, month: date) -> list:
             continue
 
         meter = (
-            MeterReading.objects
+            MeterReading.unscoped_objects
             .filter(room=room, reading_date__year=month.year, reading_date__month=month.month)
             .order_by('-reading_date')
             .first()
@@ -85,8 +96,10 @@ def generate_bills_for_dormitory(dormitory, month: date) -> list:
                 room=room,
                 month=month,
                 base_rent=room.base_rent,
+                meter_reading=meter,
                 water_amt=water_amt,
                 elec_amt=elec_amt,
+                other_amt=Decimal('0'),
                 total=total,
                 due_date=due_date,
                 status=Bill.Status.DRAFT,
@@ -113,7 +126,6 @@ def mark_overdue_bills() -> int:
 
 def get_dunning_trigger_dates(due_date):
     """Return all dunning trigger dates for a bill."""
-    from datetime import timedelta
     return {
         'pre_7d': due_date - timedelta(days=7),
         'pre_3d': due_date - timedelta(days=3),

@@ -1,6 +1,6 @@
 {% load i18n %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="{% if request.user.is_authenticated and request.user.theme == 'dark' %}dark{% endif %}">
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
@@ -10,6 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script>
     tailwind.config = {
+        darkMode: 'class',
         theme: {
             extend: {
                 colors: {
@@ -25,13 +26,13 @@
 <style>body { font-family: 'Inter', sans-serif; }</style>
 {% block extra_head %}{% endblock %}
 </head>
-<body class="bg-slate-200 font-display text-slate-900 min-h-screen">
+<body class="bg-slate-200 dark:bg-slate-950 font-display text-slate-900 dark:text-slate-100 min-h-screen">
 
 <!-- Center-column shell: full-width on mobile, 680px centered on desktop -->
-<div class="min-h-screen lg:max-w-[680px] lg:mx-auto lg:shadow-xl bg-background-light flex flex-col">
+<div class="min-h-screen lg:max-w-[680px] lg:mx-auto lg:shadow-xl bg-background-light dark:bg-slate-900 flex flex-col">
 
     <!-- FIXED HEADER -->
-    <header class="fixed top-0 left-0 right-0 z-30 bg-white border-b border-slate-200 lg:max-w-[680px] lg:left-1/2 lg:-translate-x-1/2">
+    <header class="fixed top-0 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 lg:max-w-[680px] lg:left-1/2 lg:-translate-x-1/2">
         <div class="flex items-center justify-between px-4 h-14">
             <div class="flex items-center gap-2">
                 <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
@@ -49,6 +50,13 @@
                     <i class="fa-regular fa-circle-user text-primary text-lg"></i>
                     <span class="text-sm text-slate-600 hidden sm:block">{{ request.user.get_full_name|default:request.user.username }}</span>
                 </div>
+                <form method="post" action="{% url 'core:theme_toggle' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.path }}">
+                    <button type="submit" class="p-2 text-slate-400 hover:text-primary hover:bg-primary/10 dark:hover:bg-slate-700 rounded-lg transition-colors" title="{% trans 'Toggle theme' %}">
+                        <i class="fa-solid {% if request.user.theme == 'dark' %}fa-sun{% else %}fa-moon{% endif %}"></i>
+                    </button>
+                </form>
                 <form method="post" action="{% url 'core:logout' %}">
                     {% csrf_token %}
                     <button type="submit" class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="{% trans 'Logout' %}">
@@ -79,7 +87,7 @@
     </main>
 
     <!-- FIXED BOTTOM NAV (Tenant) -->
-    <nav class="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 lg:max-w-[680px] lg:left-1/2 lg:-translate-x-1/2">
+    <nav class="fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 lg:max-w-[680px] lg:left-1/2 lg:-translate-x-1/2">
         <div class="flex justify-around items-center h-16">
             <a href="{% url 'tenant:home' %}" class="flex flex-col items-center gap-0.5 px-2 py-1 min-w-[48px] {% block nav_home %}text-slate-400 hover:text-primary{% endblock %} transition-colors">
                 <i class="fa-solid fa-house text-xl"></i>

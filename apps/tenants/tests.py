@@ -4,21 +4,24 @@ from django.test import TestCase
 from django.urls import reverse
 
 from apps.core.models import Dormitory, CustomUser
+from apps.core.threadlocal import dormitory_context
 from apps.rooms.models import Building, Floor, Room
 from apps.tenants.models import TenantProfile, Lease
 
 
 def _make_room(dorm, number='101'):
-    b = Building.objects.create(dormitory=dorm, name=f'Building-{number}')
-    f = Floor.objects.create(building=b, number=1)
-    return Room.objects.create(floor=f, number=number, base_rent=5000)
+    with dormitory_context(dorm):
+        b = Building.objects.create(name=f'Building-{number}')
+        f = Floor.objects.create(building=b, number=1)
+        return Room.objects.create(floor=f, number=number, base_rent=5000)
 
 
 def _make_tenant(username, dorm, room=None):
-    user = CustomUser.objects.create_user(
-        username, password='pass', role='tenant', dormitory=dorm
-    )
-    return TenantProfile.objects.create(user=user, room=room)
+    with dormitory_context(dorm):
+        user = CustomUser.objects.create_user(
+            username, password='pass', role='tenant', dormitory=dorm
+        )
+        return TenantProfile.objects.create(user=user, room=room)
 
 
 class LeaseModelTests(TestCase):
@@ -111,7 +114,8 @@ class TenantProfileMultiUnitTests(TestCase):
         self.assertEqual(self.tenant.active_room, self.room_b)
 
     def test_dormitory_property_returns_correct_dorm(self):
-        self.assertEqual(self.tenant.dormitory, self.dorm)
+        with dormitory_context(self.dorm):
+            self.assertEqual(self.tenant.dormitory, self.dorm)
 
 
 class DormProfilesIsolationTests(TestCase):

@@ -1,10 +1,10 @@
 from django.db import models
-from apps.core.models import Dormitory, CustomUser
+from apps.core.models import Dormitory, CustomUser, TenantModelMixin
 from apps.rooms.models import Room
 from apps.billing.models import Bill
 
 
-class Parcel(models.Model):
+class Parcel(TenantModelMixin):
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='parcels')
     photo = models.ImageField(upload_to='parcels/')
     carrier = models.CharField(max_length=100)
@@ -19,18 +19,18 @@ class Parcel(models.Model):
     def __str__(self):
         return f'Parcel for Room {self.room.number} - {self.carrier}'
 
-    @property
-    def dormitory(self):
-        return self.room.dormitory
+    def save(self, *args, **kwargs):
+        if self.room_id and not getattr(self, 'dormitory_id', None):
+            self.dormitory_id = self.room.dormitory_id
+        super().save(*args, **kwargs)
 
 
-class Broadcast(models.Model):
+class Broadcast(TenantModelMixin):
     class AudienceType(models.TextChoices):
         ALL = 'all', 'All Tenants'
         BUILDING = 'building', 'By Building'
         FLOOR = 'floor', 'By Floor'
 
-    dormitory = models.ForeignKey(Dormitory, on_delete=models.CASCADE, related_name='broadcasts')
     audience_type = models.CharField(max_length=20, choices=AudienceType.choices, default=AudienceType.ALL)
     audience_ref = models.CharField(max_length=100, blank=True, help_text='Building name or Floor number if targeted')
     title = models.CharField(max_length=200)
@@ -44,10 +44,11 @@ class Broadcast(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f'Broadcast: {self.title} ({self.dormitory.name})'
+        dorm_name = self.dormitory.name if getattr(self, 'dormitory_id', None) else "No Dorm"
+        return f'Broadcast: {self.title} ({dorm_name})'
 
 
-class DunningLog(models.Model):
+class DunningLog(TenantModelMixin):
     class TriggerType(models.TextChoices):
         PRE_7D = 'pre_7d', '7 Days Before Due'
         PRE_3D = 'pre_3d', '3 Days Before Due'
@@ -69,3 +70,8 @@ class DunningLog(models.Model):
 
     def __str__(self):
         return f'Dunning {self.trigger_type} for {self.bill}'
+
+    def save(self, *args, **kwargs):
+        if self.bill_id and not getattr(self, 'dormitory_id', None):
+            self.dormitory_id = self.bill.dormitory_id
+        super().save(*args, **kwargs)

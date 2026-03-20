@@ -1,9 +1,9 @@
 from django.db import models
-from apps.core.models import CustomUser
+from apps.core.models import CustomUser, TenantModelMixin
 from apps.rooms.models import Room
 
 
-class TenantProfile(models.Model):
+class TenantProfile(TenantModelMixin):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='tenant_profile')
     room = models.ForeignKey(Room, on_delete=models.SET_NULL, null=True, blank=True, related_name='tenant_profiles')
     phone = models.CharField(max_length=20, blank=True)
@@ -16,12 +16,10 @@ class TenantProfile(models.Model):
     def __str__(self):
         return f'Tenant: {self.user.get_full_name() or self.user.username}'
 
-    @property
-    def dormitory(self):
-        active = self.leases.filter(status='active').select_related('room__floor__building__dormitory').first()
-        if active and active.room:
-            return active.room.floor.building.dormitory
-        return self.room.floor.building.dormitory if self.room else None
+    def save(self, *args, **kwargs):
+        if self.room_id and not self.dormitory_id:
+            self.dormitory_id = self.room.dormitory_id
+        super().save(*args, **kwargs)
 
     @property
     def active_room(self):
@@ -29,7 +27,7 @@ class TenantProfile(models.Model):
         return lease.room if (lease and lease.room) else self.room
 
 
-class Lease(models.Model):
+class Lease(TenantModelMixin):
     class Status(models.TextChoices):
         ACTIVE = 'active', 'Active'
         ENDED = 'ended', 'Ended'
@@ -54,8 +52,15 @@ class Lease(models.Model):
         room_str = f' @ {self.room}' if self.room else ''
         return f'Lease {self.tenant}{room_str} ({self.start_date})'
 
+    def save(self, *args, **kwargs):
+        if self.room_id and not self.dormitory_id:
+            self.dormitory_id = self.room.dormitory_id
+        elif self.tenant_id and not self.dormitory_id:
+            self.dormitory_id = self.tenant.dormitory_id
+        super().save(*args, **kwargs)
 
-class DigitalVault(models.Model):
+
+class DigitalVault(TenantModelMixin):
     class FileType(models.TextChoices):
         ID_CARD = 'id_card', 'ID Card'
         ROOM_PHOTO = 'room_photo', 'Room Photo'
@@ -68,3 +73,8 @@ class DigitalVault(models.Model):
 
     def __str__(self):
         return f'{self.tenant} - {self.file_type}'
+
+    def save(self, *args, **kwargs):
+        if self.tenant_id and not self.dormitory_id:
+            self.dormitory_id = self.tenant.dormitory_id
+        super().save(*args, **kwargs)
