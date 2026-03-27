@@ -18,7 +18,6 @@ def landing_view(request):
 
 
 def login_view(request):
-
     """Login page — redirects based on role."""
     if request.user.is_authenticated:
         if request.user.role == 'tenant':
@@ -116,9 +115,11 @@ class SetupWizardView(View):
         default_rent = request.POST.get('default_rent', 0) or 0
 
         if building_name and num_floors > 0 and rooms_per_floor > 0:
-            building, _ = Building.objects.get_or_create(dormitory=dorm, name=building_name)
+            building, _ = Building.objects.get_or_create(
+                dormitory=dorm, name=building_name)
             for floor_num in range(1, num_floors + 1):
-                floor, _ = Floor.objects.get_or_create(building=building, number=floor_num)
+                floor, _ = Floor.objects.get_or_create(
+                    building=building, number=floor_num)
                 for room_num in range(1, rooms_per_floor + 1):
                     room_number = f"{floor_num}{str(room_num).zfill(2)}"
                     Room.objects.get_or_create(
@@ -166,6 +167,7 @@ def property_switch_view(request):
     writing it to the session.  Redirects back to the referring page.
     """
     from apps.core.models import Dormitory, UserDormitoryRole
+    from django.core.exceptions import ValidationError
 
     dormitory_id = request.POST.get('dormitory_id')
     if dormitory_id:
@@ -175,14 +177,16 @@ def property_switch_view(request):
                 userdormitoryrole__user=request.user,
             )
             request.session['active_dormitory_id'] = str(dorm.pk)
-        except Dormitory.DoesNotExist:
-            messages.error(request, _('You do not have access to that property.'))
+        except (Dormitory.DoesNotExist, ValidationError):
+            messages.error(request, _(
+                'You do not have access to that property.'))
 
     return redirect(request.POST.get('next') or 'dashboard:index')
 
 
 class _WizardForm:
     """Simple wrapper to pass POST data back to template."""
+
     def __init__(self, step, data=None):
         self.step = step
         self._data = data or {}
@@ -192,6 +196,7 @@ class _WizardForm:
             def __init__(self, val):
                 self._val = val
                 self.errors = []
+
             def value(self):
                 return self._val
         return _Field(self._data.get(name, ''))

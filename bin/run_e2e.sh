@@ -52,10 +52,19 @@ if ! python -c "import playwright" 2>/dev/null; then
 fi
 
 # ─── Wait for server to be ready ─────────────────────────────────────────────
-waiting "Waiting for server at $BASE_URL ..."
+waiting "Waiting for server at $BASE_URL (or auto-detecting ports 8000, 18000)..."
 MAX_WAIT=30
 WAITED=0
 until curl -sf "$BASE_URL/login/" -o /dev/null 2>/dev/null; do
+    # Auto-detect if using default
+    if [[ "$BASE_URL" == "http://localhost:8000" ]]; then
+        if curl -sf "http://localhost:18000/login/" -o /dev/null 2>/dev/null; then
+            BASE_URL="http://localhost:18000"
+            info "Auto-switched to running server at $BASE_URL"
+            break
+        fi
+    fi
+
     if [ $WAITED -ge $MAX_WAIT ]; then
         err "Server did not become ready within ${MAX_WAIT}s. Is it running?"
         err "Hint: docker-compose up -d  OR  python manage.py runserver"
@@ -64,7 +73,7 @@ until curl -sf "$BASE_URL/login/" -o /dev/null 2>/dev/null; do
     sleep 1
     WAITED=$((WAITED + 1))
 done
-ok "Server is ready."
+ok "Server is ready at $BASE_URL."
 
 # ─── Run E2E tests ───────────────────────────────────────────────────────────
 echo ""
