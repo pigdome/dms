@@ -386,6 +386,17 @@ def run_tests():
         browser = p.chromium.launch(headless=True)
 
         # ----------------------------------------------------------------
+        # Public Pages (Unauthenticated) Smoke tests
+        # ----------------------------------------------------------------
+        print("\n=== Smoke testing Public Pages ===")
+        ctx = browser.new_context()
+        page = ctx.new_page()
+        for url in ["/", "/welcome/", "/login/"]:
+            result = test_url(page, url, "anonymous")
+            print_result(result)
+        ctx.close()
+
+        # ----------------------------------------------------------------
         # Basic smoke tests for all roles
         # ----------------------------------------------------------------
         for username, password, urls in [

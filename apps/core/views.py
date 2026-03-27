@@ -8,7 +8,17 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_POST
 
 
+def landing_view(request):
+    """SEO-optimized public landing page."""
+    if request.user.is_authenticated:
+        if request.user.role == 'tenant':
+            return redirect('tenant:home')
+        return redirect('dashboard:index')
+    return render(request, 'landing.html')
+
+
 def login_view(request):
+
     """Login page — redirects based on role."""
     if request.user.is_authenticated:
         if request.user.role == 'tenant':

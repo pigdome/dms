@@ -10,7 +10,7 @@ def root_redirect(request):
         if request.user.role == 'tenant':
             return redirect('tenant:home')
         return redirect('dashboard:index')
-    return redirect('core:login')
+    return redirect('core:landing')
 
 
 urlpatterns = [

@@ -1,0 +1,336 @@
+{% load static %}{% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% trans "DMS - Modern Dormitory Management System" %}</title>
+    <meta name="description" content="{% trans 'The most comprehensive dormitory management system. Automate your billing, parcel notifications, and maintenance requests.' %}">
+    
+    <!-- SEO & Favicon -->
+    <link rel="icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#137fec',
+                        dark: '#0f172a',
+                        surface: '#f8fafc',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'Sarabun', 'sans-serif'],
+                        display: ['Inter', 'Sarabun', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', 'Sarabun', sans-serif; scroll-behavior: smooth; }
+        .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); }
+        .hero-gradient { background: radial-gradient(circle at 10% 20%, rgba(19, 127, 236, 0.05) 0%, rgba(255, 255, 255, 0) 100%); }
+    </style>
+</head>
+<body class="bg-white text-slate-900 overflow-x-hidden hero-gradient">
+
+    <!-- Navigation -->
+    <nav class="fixed top-0 left-0 right-0 z-50 glass border-b border-slate-100">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-20">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary/20">
+                        <i class="fa-solid fa-building text-xl"></i>
+                    </div>
+                    <span class="text-2xl font-extrabold tracking-tight text-dark">DMS</span>
+                </div>
+                
+                <div class="hidden md:flex items-center gap-8 font-medium">
+                    <a href="#features" class="text-slate-600 hover:text-primary transition-colors">{% trans "Features" %}</a>
+                    <a href="#how-it-works" class="text-slate-600 hover:text-primary transition-colors">{% trans "How it works" %}</a>
+                    <a href="{% url 'core:login' %}" class="text-slate-600 hover:text-primary transition-colors">{% trans "Log in" %}</a>
+                    <a href="{% url 'core:login' %}" class="bg-primary text-white px-6 py-3 rounded-full hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 hover:scale-105 active:scale-95">
+                        {% trans "Get Started" %}
+                    </a>
+                </div>
+
+                <div class="md:hidden">
+                    <button class="text-dark text-2xl"><i class="fa-solid fa-bars"></i></button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="pt-32 pb-16 lg:pt-48 lg:pb-32 px-4">
+        <div class="max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 items-center">
+            <div class="space-y-8 animate-fade-in-up">
+                <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-bold border border-primary/20">
+                    <span class="relative flex h-2 w-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                    </span>
+                    {% trans "Smart Dormitory System #1" %}
+                </div>
+                <h1 class="text-5xl lg:text-7xl font-extrabold text-dark leading-tight">
+                    {% trans "Automate Your" %}<br>
+                    <span class="text-primary">{% trans "Dormitory Management" %}</span>
+                </h1>
+                <p class="text-xl text-slate-500 max-w-xl leading-relaxed">
+                    {% trans "ระบบจัดการหอพักที่ทันสมัยที่สุด ช่วยให้คุณจัดการบิล แจ้งพัสดุ และงานซ่อมบำรุงได้ในที่เดียว ประหยัดเวลา ลดความผิดพลาด" %}
+                </p>
+                <div class="flex flex-wrap gap-4 pt-4">
+                    <a href="{% url 'core:login' %}" class="bg-primary text-white px-8 py-4 rounded-2xl font-bold text-lg hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 flex items-center gap-3">
+                        {% trans "เริ่มใช้งานได้เลย" %} <i class="fa-solid fa-arrow-right"></i>
+                    </a>
+                    <a href="#features" class="bg-slate-100 text-slate-700 px-8 py-4 rounded-2xl font-bold text-lg hover:bg-slate-200 transition-all flex items-center gap-3">
+                        {% trans "ฟีเจอร์เด่น" %}
+                    </a>
+                </div>
+                <div class="flex items-center gap-8 pt-8">
+                    <div class="flex -space-x-3">
+                        <img class="w-10 h-10 rounded-full border-4 border-white" src="https://ui-avatars.com/api/?name=A1&bg=137fec&color=fff" alt="User">
+                        <img class="w-10 h-10 rounded-full border-4 border-white" src="https://ui-avatars.com/api/?name=A2&bg=6366f1&color=fff" alt="User">
+                        <img class="w-10 h-10 rounded-full border-4 border-white" src="https://ui-avatars.com/api/?name=A3&bg=ec4899&color=fff" alt="User">
+                    </div>
+                    <div>
+                        <p class="text-dark font-bold text-sm">{% trans "Joined by 500+ Dormitories" %}</p>
+                        <div class="flex text-amber-400 text-xs gap-1">
+                            <i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="relative">
+                <div class="absolute -top-10 -left-10 w-72 h-72 bg-primary/20 rounded-full blur-3xl opacity-50"></div>
+                <div class="absolute -bottom-10 -right-10 w-72 h-72 bg-emerald-400/20 rounded-full blur-3xl opacity-50"></div>
+                <img src="{% static 'img/landing/hero.png' %}" alt="DMS Dashboard" class="relative rounded-3xl shadow-2xl border border-slate-100 z-10 w-full hover:scale-[1.02] transition-transform duration-500">
+                <div class="absolute -bottom-8 -left-8 glass p-6 rounded-2xl shadow-xl z-20 border border-white/50 hidden sm:block">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
+                            <i class="fa-solid fa-check-double text-xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-500 font-medium">{% trans "Occupancy Rate" %}</p>
+                            <p class="text-xl font-bold text-dark">98.5%</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Trusted By -->
+    <section class="py-12 border-y border-slate-100 bg-surface/50">
+        <div class="max-w-7xl mx-auto px-4 flex flex-wrap justify-center gap-6 md:gap-12 lg:gap-24 opacity-50 grayscale hover:grayscale-0 transition-all text-center">
+             <div class="flex items-center gap-2 md:gap-3 font-bold text-lg md:text-2xl text-slate-400"><i class="fa-solid fa-cloud"></i> CLOUD STORAGE</div>
+             <div class="flex items-center gap-2 md:gap-3 font-bold text-lg md:text-2xl text-slate-400"><i class="fa-solid fa-bolt"></i> FAST SETUP</div>
+             <div class="flex items-center gap-2 md:gap-3 font-bold text-lg md:text-2xl text-slate-400"><i class="fa-solid fa-headset"></i> 24/7 SUPPORT</div>
+             <div class="flex items-center gap-2 md:gap-3 font-bold text-lg md:text-2xl text-slate-400"><i class="fa-solid fa-smile"></i> HAPPY TENANTS</div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="py-24 lg:py-32">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="text-center max-w-3xl mx-auto mb-20 space-y-4">
+                <h2 class="text-primary font-bold tracking-widest uppercase text-sm">{% trans "Our Solutions" %}</h2>
+                <h3 class="text-4xl lg:text-5xl font-extrabold text-dark">{% trans "ฟีเจอร์เด่นที่ออกแบบมาเพื่อคุณ" %}</h3>
+                <p class="text-lg text-slate-500">{% trans "จัดการทุกมิติของหอพักผ่านระบบเดียว ที่เข้าใจการทำงานจริงของเจ้าของหอพัก" %}</p>
+            </div>
+            
+            <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+                <!-- Feature 1 -->
+                <div class="group p-8 rounded-3xl border border-slate-100 bg-white hover:border-primary/50 hover:shadow-2xl hover:shadow-primary/10 transition-all duration-300">
+                    <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-primary group-hover:text-white transition-colors">
+                        <i class="fa-solid fa-file-invoice-dollar text-2xl"></i>
+                    </div>
+                    <h4 class="text-xl font-bold text-dark mb-4">{% trans "Automated Billing" %}</h4>
+                    <p class="text-slate-500 mb-6">{% trans "จดมิเตอร์ค่าน้ำค่าไฟ คำนวณบิล และส่งใบแจ้งหนี้ออนไลน์อัตโนมัติ ลดความผิดพลาด 100%" %}</p>
+                    <a href="{% url 'core:login' %}" class="text-primary font-bold flex items-center gap-2 group-hover:gap-3 transition-all">
+                        {% trans "Learn more" %} <i class="fa-solid fa-arrow-right text-sm"></i>
+                    </a>
+                </div>
+
+                <!-- Feature 2 -->
+                <div class="group p-8 rounded-3xl border border-slate-100 bg-white hover:border-primary/50 hover:shadow-2xl hover:shadow-primary/10 transition-all duration-300">
+                    <div class="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-primary group-hover:text-white transition-colors">
+                        <i class="fa-solid fa-box-open text-2xl"></i>
+                    </div>
+                    <h4 class="text-xl font-bold text-dark mb-4">{% trans "Tenant & LINE Portal" %}</h4>
+                    <p class="text-slate-500 mb-6">{% trans "แจ้งเตือนบิล รับพัสดุ และประกาศผ่าน LINE พร้อมระบบให้ผู้เช่าจัดการตนเองได้ 24 ชม." %}</p>
+                    <a href="{% url 'core:login' %}" class="text-primary font-bold flex items-center gap-2 group-hover:gap-3 transition-all">
+                        {% trans "Learn more" %} <i class="fa-solid fa-arrow-right text-sm"></i>
+                    </a>
+                </div>
+
+                <!-- Feature 3 -->
+                <div class="group p-8 rounded-3xl border border-slate-100 bg-white hover:border-primary/50 hover:shadow-2xl hover:shadow-primary/10 transition-all duration-300">
+                    <div class="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-primary group-hover:text-white transition-colors">
+                         <i class="fa-solid fa-shield-check text-2xl"></i>
+                    </div>
+                    <h4 class="text-xl font-bold text-dark mb-4">{% trans "QR Code Payments" %}</h4>
+                    <p class="text-slate-500 mb-6">{% trans "ชำระเงินออนไลน์ผ่าน QR Code ตรวจสอบยอดและปรับสถานะบิลอัตโนมัติ ไม่ต้องคอยเช็คสลิปเอง" %}</p>
+                    <a href="{% url 'core:login' %}" class="text-primary font-bold flex items-center gap-2 group-hover:gap-3 transition-all">
+                        {% trans "Learn more" %} <i class="fa-solid fa-arrow-right text-sm"></i>
+                    </a>
+                </div>
+
+                <!-- Feature 4 -->
+                <div class="group p-8 rounded-3xl border border-slate-100 bg-white hover:border-primary/50 hover:shadow-2xl hover:shadow-primary/10 transition-all duration-300">
+                    <div class="w-16 h-16 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-primary group-hover:text-white transition-colors">
+                        <i class="fa-solid fa-hammer text-2xl"></i>
+                    </div>
+                    <h4 class="text-xl font-bold text-dark mb-4">{% trans "Maintenance Tracking" %}</h4>
+                    <p class="text-slate-500 mb-6">{% trans "ระบบแจ้งซ่อมออนไลน์พร้อมแนบรูปภาพ ติดตามสถานะงานช่างได้รวดเร็วและมีประสิทธิภาพ" %}</p>
+                    <a href="{% url 'core:login' %}" class="text-primary font-bold flex items-center gap-2 group-hover:gap-3 transition-all">
+                        {% trans "Learn more" %} <i class="fa-solid fa-arrow-right text-sm"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- UI Preview Section -->
+    <section id="how-it-works" class="py-24 bg-dark text-white overflow-hidden relative">
+        <div class="absolute top-0 right-0 w-1/2 h-full bg-primary/20 blur-[100px] rounded-full"></div>
+        <div class="max-w-7xl mx-auto px-4 grid lg:grid-cols-2 gap-24 items-center">
+            <div class="space-y-8 relative z-10">
+                <h3 class="text-4xl lg:text-5xl font-extrabold leading-tight">
+                    {% trans "เปลี่ยนหอพักของคุณให้เป็นหอพักอัจฉริยะใน 3 ขั้นตอน" %}
+                </h3>
+                <div class="space-y-8 pt-8">
+                    <div class="flex gap-6">
+                        <div class="flex-shrink-0 w-12 h-12 bg-primary rounded-full flex items-center justify-center font-bold text-xl shadow-lg shadow-primary/40">1</div>
+                        <div>
+                            <h5 class="text-xl font-bold mb-2">{% trans "ตั้งค่าหอพักใน 5 นาที" %}</h5>
+                            <p class="text-slate-400">{% trans "เพิ่มข้อมูลอาคาร ชั้น ห้องพัก และเรทค่าน้ำ-ไฟ เพื่อเริ่มต้นระบบอย่างรวดเร็ว" %}</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-6">
+                        <div class="flex-shrink-0 w-12 h-12 bg-white/10 rounded-full flex items-center justify-center font-bold text-xl border border-white/20">2</div>
+                        <div>
+                            <h5 class="text-xl font-bold mb-2">{% trans "จัดการสัญญาและผู้เช่า" %}</h5>
+                            <p class="text-slate-400">{% trans "ทำสัญญาผู้เช่าออนไลน์ และเก็บเอกสารสำคัญอย่างปลอดภัยด้วย Digital Vault" %}</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-6">
+                        <div class="flex-shrink-0 w-12 h-12 bg-white/10 rounded-full flex items-center justify-center font-bold text-xl border border-white/20">3</div>
+                        <div>
+                            <h5 class="text-xl font-bold mb-2">{% trans "จดมิเตอร์และส่งบิลอัตโนมัติ" %}</h5>
+                            <p class="text-slate-400">{% trans "เพียงใส่เลขมิเตอร์ค่าน้ำไฟประจำเดือน ระบบจะคำนวณเงินและส่งบิลทันที" %}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="pt-8">
+                    <a href="{% url 'core:login' %}" class="inline-block bg-white text-dark px-10 py-5 rounded-2xl font-bold text-lg hover:bg-slate-100 transition-all shadow-xl shadow-white/5 uppercase tracking-widest">
+                        {% trans "Start Free Trial" %}
+                    </a>
+                </div>
+            </div>
+            <div class="relative z-10">
+                <div class="absolute inset-0 bg-primary/30 blur-3xl rounded-full scale-75 animate-pulse"></div>
+                <img src="{% static 'img/landing/mockup.png' %}" alt="DMS Mobile App" class="relative z-20 w-3/4 mx-auto drop-shadow-[0_35px_35px_rgba(0,0,0,0.5)] transform hover:rotate-2 transition-transform duration-700">
+            </div>
+        </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="py-32 px-4">
+        <div class="max-w-5xl mx-auto rounded-[3rem] bg-primary p-12 lg:p-24 text-center text-white relative overflow-hidden shadow-2xl shadow-primary/40">
+            <div class="absolute top-0 left-0 w-full h-full opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+            <div class="relative z-10 space-y-8">
+                <h3 class="text-4xl lg:text-7xl font-extrabold mb-4">{% trans "Modernize Your Dormitory Today" %}</h3>
+                <p class="text-2xl text-blue-100 max-w-2xl mx-auto">
+                    {% trans "ถึงเวลาเปลี่ยนมาใช้ระบบจัดการหอพักที่ช่วยให้ชีวิตคุณง่ายขึ้น" %}
+                </p>
+                <div class="flex flex-col sm:flex-row gap-4 justify-center pt-8">
+                    <a href="{% url 'core:login' %}" class="bg-white text-primary px-12 py-5 rounded-2xl font-black text-xl hover:scale-105 active:scale-95 transition-all shadow-2xl">
+                        {% trans "เริ่มใช้งานฟรี 30 วัน" %}
+                    </a>
+                    <a href="mailto:support@dms.com" class="bg-primary/20 backdrop-blur-md border border-white/30 text-white px-12 py-5 rounded-2xl font-bold text-xl hover:bg-white/10 transition-all">
+                        {% trans "ติดต่อเจ้าหน้าที่" %}
+                    </a>
+                </div>
+                <p class="text-sm font-medium text-blue-100/60">{% trans "No credit card required. Cancel anytime." %}</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="pt-24 pb-12 bg-white">
+        <div class="max-w-7xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-12 lg:gap-8">
+            <div class="col-span-2 lg:col-span-2 space-y-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white">
+                         <i class="fa-solid fa-building text-xl"></i>
+                    </div>
+                    <span class="text-2xl font-extrabold tracking-tight text-dark">DMS</span>
+                </div>
+                <p class="text-slate-500 max-w-sm">
+                    {% trans "ระบบจัดการหอพักที่ครอบคลุมที่สุด พัฒนาโดยผู้เชี่ยวชาญเพื่อผู้ประกอบการหอพักยุคใหม่" %}
+                </p>
+                <div class="flex gap-4">
+                    <a href="javascript:void(0)" class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-primary hover:text-white transition-all"><i class="fa-brands fa-facebook-f"></i></a>
+                    <a href="javascript:void(0)" class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-primary hover:text-white transition-all"><i class="fa-brands fa-twitter"></i></a>
+                    <a href="javascript:void(0)" class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-primary hover:text-white transition-all"><i class="fa-brands fa-line"></i></a>
+                </div>
+            </div>
+            <div>
+                <h6 class="font-black text-dark uppercase tracking-widest text-xs mb-8">{% trans "Features" %}</h6>
+                <ul class="space-y-4 text-slate-500 font-medium">
+                    <li><a href="#features" class="hover:text-primary transition-colors">Smart Billing</a></li>
+                    <li><a href="#features" class="hover:text-primary transition-colors">Parcel System</a></li>
+                    <li><a href="#features" class="hover:text-primary transition-colors">Maintenance</a></li>
+                    <li><a href="#features" class="hover:text-primary transition-colors">Tenant App</a></li>
+                </ul>
+            </div>
+            <div>
+                <h6 class="font-black text-dark uppercase tracking-widest text-xs mb-8">{% trans "Company" %}</h6>
+                <ul class="space-y-4 text-slate-500 font-medium">
+                    <li><a href="javascript:void(0)" class="hover:text-primary transition-colors">About Us</a></li>
+                    <li><a href="javascript:void(0)" class="hover:text-primary transition-colors">Contact</a></li>
+                    <li><a href="javascript:void(0)" class="hover:text-primary transition-colors">Privacy Policy</a></li>
+                    <li><a href="javascript:void(0)" class="hover:text-primary transition-colors">Terms of Service</a></li>
+                </ul>
+            </div>
+            <div>
+                <h6 class="font-black text-dark uppercase tracking-widest text-xs mb-8">{% trans "Subscribe" %}</h6>
+                <p class="text-sm text-slate-500 mb-6 font-medium">{% trans "Get news and updates" %}</p>
+                <form class="space-y-3" onsubmit="event.preventDefault();">
+                    <input type="email" placeholder="Email address" class="w-full px-4 py-3 rounded-xl bg-slate-100 border-none focus:ring-2 focus:ring-primary/20 outline-none text-sm">
+                    <button class="w-full bg-primary text-white py-3 rounded-xl font-bold shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all">
+                        {% trans "Subscribe" %}
+                    </button>
+                </form>
+            </div>
+        </div>
+        <div class="max-w-7xl mx-auto px-4 mt-24 pt-8 border-t border-slate-100 text-center text-slate-400 text-sm font-medium">
+            <p>&copy; {% now 'Y' %} DMS (Dormitory Management System). All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script>
+        // Smooth scroll for nav links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
+        });
+    </script>
+</body>
+</html>
