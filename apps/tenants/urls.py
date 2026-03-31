@@ -5,6 +5,7 @@ from apps.tenants.views import (
     TenantCreateView,
     TenantUpdateView,
     TenantImportView,
+    AnonymizeTenantView,
 )
 
 app_name = 'tenants'
@@ -15,4 +16,6 @@ urlpatterns = [
     path('import/', TenantImportView.as_view(), name='import'),
     path('<uuid:pk>/', TenantDetailView.as_view(), name='detail'),
     path('<uuid:pk>/edit/', TenantUpdateView.as_view(), name='update'),
+    # PDPA Right to be Forgotten — owner only, irreversible
+    path('<uuid:pk>/anonymize/', AnonymizeTenantView.as_view(), name='anonymize'),
 ]

@@ -8,7 +8,7 @@ from django.utils.translation import gettext_lazy as _
 from apps.maintenance.models import MaintenanceTicket, TicketPhoto, TicketStatusHistory
 from apps.tenants.models import TenantProfile
 
-from apps.core.decorators import staff_required
+from apps.core.mixins import StaffRequiredMixin
 from apps.core.utils import SimpleForm
 from apps.core.models import ActivityLog
 
@@ -28,8 +28,7 @@ def _dorm_rooms(user, dormitory=None):
     ).select_related('floor', 'floor__building')
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class TicketListView(View):
+class TicketListView(StaffRequiredMixin, View):
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         tickets = _dorm_tickets(request.user, dormitory=dorm)
@@ -52,8 +51,7 @@ class TicketListView(View):
         })
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class TicketDetailView(View):
+class TicketDetailView(StaffRequiredMixin, View):
     def get(self, request, pk):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         ticket = get_object_or_404(_dorm_tickets(request.user, dormitory=dorm), pk=pk)
@@ -63,8 +61,7 @@ class TicketDetailView(View):
         })
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class TicketCreateView(View):
+class TicketCreateView(StaffRequiredMixin, View):
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         return render(request, 'maintenance/form.html', {

@@ -1,4 +1,5 @@
 amqp==5.3.1
+djangorestframework==3.15.2
 asgiref==3.11.1
 billiard==4.2.4
 celery==5.6.2
@@ -23,6 +24,7 @@ python-crontab==3.3.0
 python-dateutil==2.9.0.post0
 python-decouple==3.8
 redis==7.3.0
+requests==2.32.3
 six==1.17.0
 sqlparse==0.5.5
 tzdata==2025.3

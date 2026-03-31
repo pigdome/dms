@@ -1,7 +1,7 @@
 # DMS — Dormitory Management System
 
 ## Project Overview
-ระบบบริหารจัดการหอพัก Multi-Tenant SaaS
+ระบบบริหารจัดการหอพัก Multi-Tenant SaaS สำหรับเจ้าของหอพักไทย รองรับตั้งแต่หอเล็ก 10 ห้อง จนถึงหอใหญ่ 500+ ห้อง
 ดู spec เต็มได้ที่ [instruction.md](instruction.md)
 
 ---
@@ -9,8 +9,8 @@
 ## Tech Stack
 - **Backend:** Django + Django Admin (theme: unfold)
 - **Frontend:** Django Templates (Owner/Staff web + Tenant portal)
-- **Database:** PostgreSQL
-- **Cache/Queue:** Redis
+- **Database:** PostgreSQL + Prisma ORM
+- **Cache/Queue:** Redis + Celery + django-celery-beat
 - **File Storage:** Local filesystem
 - **Hosting:** Docker + Docker Compose
 - **Payment:** TMR Payment Gateway (PromptPay QR + Webhook)
@@ -21,7 +21,7 @@
 ## Architecture Decisions
 - **Multi-Tenancy:** `tenant_id` ต้องอยู่ใน **ทุก Model** ที่มีข้อมูลของ Owner — ห้าม query ข้าม tenant โดยเด็ดขาด
 - **Django Apps:** แยก app ตาม domain (billing, rooms, tenants, maintenance, notifications, etc.)
-- **Background Jobs:** ใช้ Redis + Celery (หรือ django-rq) สำหรับ Dunning, LINE notifications
+- **Background Jobs:** ใช้ Redis + Celery สำหรับ Dunning, LINE notifications
 - **Webhook:** Payment webhook ต้องรองรับ Idempotency (ป้องกัน double-process)
 
 ---
@@ -43,6 +43,8 @@
 - ใช้ Django ORM — ห้าม raw SQL ยกเว้นจำเป็นจริงๆ
 - View ทุกตัวต้อง enforce tenant scope (ใช้ mixin หรือ queryset filter ที่ base level)
 - เขียน test สำหรับ billing calculation และ payment webhook เสมอ
+- Comment business logic สำคัญเป็นภาษาไทยได้ เพื่อให้ทีมเข้าใจง่าย
+- ทุก PR ต้องมี test case
 
 ---
 
@@ -131,9 +133,35 @@ notify:     Parcel(room_fk, photo, carrier, notes, notified_at, logged_by)
 
 ---
 
-## Team Agents
+## AI Team Configuration
 
-ใช้ sub-agents เหล่านี้สำหรับงานที่เฉพาะทาง:
+| Agent | บทบาท | Model | ใช้เมื่อ |
+|---|---|---|---|
+| `@agent-md-orchestrator` | MD / หัวหน้าโปรเจกต์ | Opus | เริ่ม feature ใหม่, sprint planning, resolve conflict |
+| `@agent-dev` | นักพัฒนา | Sonnet | Implement, แก้ bug, code review |
+| `@agent-tester` | QA | Sonnet | ทดสอบ feature, regression test |
+| `@agent-marketing` | การตลาด | Sonnet | Pitch ลูกค้า, เตรียม demo |
+| `@agent-seo` | SEO/โปรโมท | Sonnet | Content, keyword, landing page |
+| `@agent-customer-ca` | Persona (หอเล็ก) | Haiku | Simulate เจ้าของหอ < 50 ห้อง |
+| `@agent-customer-cb` | Persona (หอกลาง) | Haiku | Simulate เจ้าของหอ 50–200 ห้อง |
+| `@agent-customer-cc` | Persona (หอใหญ่) | Haiku | Simulate เจ้าของหอ 200+ ห้อง |
+
+### Sub-Agent Routing
+
+**Parallel dispatch (รันพร้อมกัน)**
+- `@agent-customer-ca` + `@agent-customer-cb` + `@agent-customer-cc` — pitch session เสมอ
+- Frontend task + Backend task ที่ไม่ depend กัน
+- SEO content + Marketing deck สำหรับ launch
+
+**Sequential dispatch (รันต่อกัน)**
+```
+Dev implement → Tester ตรวจ → ถ้า pass → MD approve
+                             → ถ้า fail → Dev แก้ → Tester ยืนยันซ้ำ
+```
+
+---
+
+## Team Agents (Specialized)
 
 ### `model-architect`
 **รับผิดชอบ:** Django models, migrations, database schema
@@ -178,6 +206,29 @@ notify:     Parcel(room_fk, photo, carrier, notes, notified_at, logged_by)
 - ตรวจสอบ SQL injection, XSS, IDOR
 - Review billing calculation edge cases
 - ตรวจสอบว่าทุก view มี authentication + permission check
+
+---
+
+## Workflow
+
+### เพิ่ม Feature ใหม่
+```
+1. บอก MD requirement
+2. MD วางแผน + แตก task
+3. Dev implement
+4. Tester ตรวจ
+5. MD approve + deploy
+```
+
+### Pitch ลูกค้า
+```
+1. บอก Marketing ว่าจะ pitch feature อะไร
+2. Marketing เตรียม pitch
+3. Spawn CA + CB + CC (Agent Team)
+4. Marketing present → ลูกค้า react
+5. Marketing สรุป feedback → MD
+6. MD สั่ง Dev ปรับปรุง
+```
 
 ---
 

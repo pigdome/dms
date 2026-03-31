@@ -18,12 +18,18 @@ class ActiveDormitoryMiddleware:
     def __call__(self, request):
         request.active_dormitory = self._resolve(request)
         
-        from apps.core.threadlocal import set_current_dormitory, clear_current_dormitory
+        from apps.core.threadlocal import (
+            set_current_dormitory, clear_current_dormitory,
+            set_current_user, clear_current_user,
+        )
         set_current_dormitory(request.active_dormitory)
+        # Set current user ใน thread-local เพื่อให้ AuditMixin รู้ว่าใคร action
+        set_current_user(request.user if request.user.is_authenticated else None)
         try:
             response = self.get_response(request)
         finally:
             clear_current_dormitory()
+            clear_current_user()
         return response
 
     @staticmethod

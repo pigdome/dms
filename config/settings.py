@@ -19,10 +19,13 @@ DJANGO_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sitemaps',
 ]
 
 THIRD_PARTY_APPS = [
     'django_celery_beat',
+    'rest_framework',
+    'rest_framework.authtoken',
 ]
 
 LOCAL_APPS = [
@@ -132,3 +135,29 @@ CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 LINE_CHANNEL_ACCESS_TOKEN = config('LINE_CHANNEL_ACCESS_TOKEN', default='')
 LINE_CHANNEL_SECRET = config('LINE_CHANNEL_SECRET', default='')
 TMR_WEBHOOK_SECRET = config('TMR_WEBHOOK_SECRET', default='')
+
+# Django REST Framework — ใช้ Token authentication + pagination มาตรฐาน
+# Rate limit: 100 requests/day per user เพื่อป้องกัน API abuse
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': ['rest_framework.authentication.TokenAuthentication'],
+    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'user': '100/day',
+    },
+}
+
+# Override settings สำหรับ test — ต้องอยู่หลัง CACHES และ REST_FRAMEWORK
+if 'test' in sys.argv:
+    # ใช้ LocMemCache ในเทสเพื่อหลีกเลี่ยง Redis dependency (throttle + cache)
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
+    # ปิด throttling ในเทสเพื่อไม่ให้รบกวน API tests
+    REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = []

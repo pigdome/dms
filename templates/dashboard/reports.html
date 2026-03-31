@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Building Reports" %} — DMS{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+
+  <!-- Page Header -->
+  <div class="flex items-center justify-between">
+    <h1 class="text-2xl font-bold text-slate-800 dark:text-slate-100">
+      {% trans "Building Reports" %}
+    </h1>
+    {% if active_dormitory %}
+      <span class="text-sm text-slate-500 dark:text-slate-400">
+        {{ active_dormitory.name }}
+      </span>
+    {% endif %}
+  </div>
+
+  <!-- Month Filter -->
+  <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm p-4">
+    <form method="get" class="flex items-center gap-3">
+      <label for="month" class="text-sm font-medium text-slate-700 dark:text-slate-300">
+        {% trans "Month" %}
+      </label>
+      <input
+        type="month"
+        id="month"
+        name="month"
+        value="{{ month_filter }}"
+        onchange="this.form.submit()"
+        class="rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700
+               text-slate-800 dark:text-slate-100 px-3 py-1.5 text-sm
+               focus:outline-none focus:ring-2 focus:ring-primary"
+      />
+      {% if month_filter != default_month %}
+        <a href="?" class="text-sm text-slate-500 dark:text-slate-400 hover:text-primary">
+          {% trans "Clear" %}
+        </a>
+      {% endif %}
+    </form>
+  </div>
+
+  <!-- Building Cards -->
+  {% if buildings_data %}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {% for item in buildings_data %}
+        <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm p-4 space-y-4">
+
+          <!-- Building Name -->
+          <h2 class="text-base font-semibold text-slate-800 dark:text-slate-100">
+            {{ item.building.name }}
+          </h2>
+
+          <div class="grid grid-cols-3 gap-3">
+
+            <!-- Revenue -->
+            <div class="bg-slate-50 dark:bg-slate-700 rounded-lg p-3 text-center">
+              <p class="text-xs text-slate-500 dark:text-slate-400 mb-1">{% trans "Revenue" %}</p>
+              <p class="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                ฿{{ item.revenue|floatformat:"0" }}
+              </p>
+            </div>
+
+            <!-- Occupancy % -->
+            <div class="bg-slate-50 dark:bg-slate-700 rounded-lg p-3 text-center">
+              <p class="text-xs text-slate-500 dark:text-slate-400 mb-1">{% trans "Occupancy" %}</p>
+              <p class="text-lg font-bold text-blue-600 dark:text-blue-400">
+                {{ item.occupancy_pct }}%
+              </p>
+              <p class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                {{ item.occupied_rooms }}/{{ item.total_rooms }}
+              </p>
+            </div>
+
+            <!-- Outstanding -->
+            <div class="bg-slate-50 dark:bg-slate-700 rounded-lg p-3 text-center">
+              <p class="text-xs text-slate-500 dark:text-slate-400 mb-1">{% trans "Outstanding" %}</p>
+              <p class="text-lg font-bold {% if item.outstanding > 0 %}text-red-600 dark:text-red-400{% else %}text-slate-500 dark:text-slate-400{% endif %}">
+                ฿{{ item.outstanding|floatformat:"0" }}
+              </p>
+            </div>
+
+          </div><!-- /grid -->
+
+        </div><!-- /card -->
+      {% endfor %}
+    </div><!-- /grid -->
+
+  {% else %}
+    <!-- Empty state -->
+    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm p-10 text-center">
+      <p class="text-slate-400 dark:text-slate-500 text-sm">
+        {% trans "No building data available for the selected month." %}
+      </p>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

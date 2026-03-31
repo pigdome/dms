@@ -1,9 +1,10 @@
 from django.db import models
 from apps.core.models import CustomUser, TenantModelMixin
+from apps.core.mixins import AuditMixin
 from apps.rooms.models import Room
 
 
-class MaintenanceTicket(TenantModelMixin):
+class MaintenanceTicket(AuditMixin, TenantModelMixin):
     class Status(models.TextChoices):
         NEW = 'new', 'New'
         IN_PROGRESS = 'in_progress', 'In Progress'

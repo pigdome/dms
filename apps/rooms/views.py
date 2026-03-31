@@ -1,6 +1,4 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
-from django.utils.decorators import method_decorator
 from django.views import View
 from django.contrib import messages
 from django.utils.translation import gettext_lazy as _
@@ -8,7 +6,7 @@ from django.utils import timezone
 
 from apps.rooms.models import Room, Building, Floor, MeterReading
 
-from apps.core.decorators import staff_required
+from apps.core.mixins import StaffRequiredMixin
 from apps.core.utils import SimpleForm
 from apps.core.models import ActivityLog
 
@@ -25,8 +23,7 @@ def _dorm_rooms(user, dormitory=None):
     ).select_related('floor', 'floor__building')
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class RoomListView(View):
+class RoomListView(StaffRequiredMixin, View):
     def get(self, request):
         rooms = _dorm_rooms(request.user)
         status_filter = request.GET.get('status', '')
@@ -38,8 +35,7 @@ class RoomListView(View):
         })
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class RoomDetailView(View):
+class RoomDetailView(StaffRequiredMixin, View):
     def get(self, request, pk):
         room = get_object_or_404(_dorm_rooms(request.user), pk=pk)
         meter_readings = room.meter_readings.all()[:5]
@@ -51,8 +47,7 @@ class RoomDetailView(View):
         })
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class RoomCreateView(View):
+class RoomCreateView(StaffRequiredMixin, View):
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         from apps.rooms.forms import RoomForm
@@ -75,8 +70,7 @@ class RoomCreateView(View):
             return redirect('rooms:detail', pk=room.pk)
         
         return render(request, 'rooms/form.html', {'form': form})
-@method_decorator([login_required, staff_required], name='dispatch')
-class RoomUpdateView(View):
+class RoomUpdateView(StaffRequiredMixin, View):
     def get(self, request, pk):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         room = get_object_or_404(_dorm_rooms(request.user, dormitory=dorm), pk=pk)
@@ -103,8 +97,7 @@ class RoomUpdateView(View):
         return render(request, 'rooms/form.html', {'form': form, 'object': room})
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class MeterReadingCreateView(View):
+class MeterReadingCreateView(StaffRequiredMixin, View):
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         from apps.rooms.forms import MeterReadingForm

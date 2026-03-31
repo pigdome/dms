@@ -1,5 +1,6 @@
 from django.db import models
 from apps.core.models import Dormitory, CustomUser, TenantModelMixin
+from apps.core.mixins import AuditMixin
 
 
 class Building(TenantModelMixin):
@@ -28,7 +29,7 @@ class Floor(TenantModelMixin):
         super().save(*args, **kwargs)
 
 
-class Room(TenantModelMixin):
+class Room(AuditMixin, TenantModelMixin):
     class Status(models.TextChoices):
         OCCUPIED = 'occupied', 'Occupied'
         VACANT = 'vacant', 'Vacant'

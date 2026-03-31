@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Export Bills CSV" %} - DMS{% endblock %}
+{% block nav_billing %}text-primary{% endblock %}
+
+{% block content %}
+<div class="px-4 py-4 space-y-4">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <a href="{% url 'billing:list' %}" class="text-slate-400 hover:text-primary transition-colors">
+        <i class="fa-solid fa-arrow-left text-sm"></i>
+      </a>
+      <h2 class="font-bold text-lg">{% trans "Export Bills CSV" %}</h2>
+    </div>
+  </div>
+
+  <!-- Export Form -->
+  <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm p-6">
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-5">
+      {% trans "Select a date range and optional building filter to download a CSV file compatible with Thai Excel (UTF-8 BOM)." %}
+    </p>
+
+    <form method="get" action="{% url 'billing:export' %}" class="space-y-5">
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <!-- Start Month -->
+        <div>
+          <label for="start_month" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+            {% trans "Start Month" %} <span class="text-red-500">*</span>
+          </label>
+          <input type="month" id="start_month" name="start_month"
+                 value="{{ default_start_month }}" required
+                 class="w-full text-sm h-10 rounded-lg border border-slate-200 dark:border-slate-600
+                        bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100
+                        px-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none"/>
+        </div>
+
+        <!-- End Month -->
+        <div>
+          <label for="end_month" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+            {% trans "End Month" %} <span class="text-red-500">*</span>
+          </label>
+          <input type="month" id="end_month" name="end_month"
+                 value="{{ default_end_month }}" required
+                 class="w-full text-sm h-10 rounded-lg border border-slate-200 dark:border-slate-600
+                        bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100
+                        px-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none"/>
+        </div>
+      </div>
+
+      <!-- Building Filter (optional) -->
+      <div>
+        <label for="building_id" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+          {% trans "Building" %} <span class="text-slate-400 text-xs font-normal">({% trans "optional" %})</span>
+        </label>
+        <select id="building_id" name="building_id"
+                class="w-full text-sm h-10 rounded-lg border border-slate-200 dark:border-slate-600
+                       bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100
+                       px-3 focus:ring-2 focus:ring-primary focus:border-primary outline-none">
+          <option value="">{% trans "All Buildings" %}</option>
+          {% for building in buildings %}
+          <option value="{{ building.pk }}">{{ building.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Submit -->
+      <div class="flex items-center gap-3 pt-2">
+        <button type="submit"
+                class="flex items-center gap-2 bg-primary text-white text-sm font-semibold
+                       px-5 py-2.5 rounded-lg hover:bg-primary/90 transition-colors shadow-sm">
+          <i class="fa-solid fa-file-csv"></i>
+          {% trans "Download CSV" %}
+        </button>
+        <a href="{% url 'billing:list' %}"
+           class="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
+          {% trans "Cancel" %}
+        </a>
+      </div>
+
+    </form>
+  </div>
+
+  <!-- Help note -->
+  <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+    <div class="flex gap-3">
+      <i class="fa-solid fa-circle-info text-blue-500 mt-0.5 flex-shrink-0"></i>
+      <div class="text-sm text-blue-700 dark:text-blue-300 space-y-1">
+        <p class="font-medium">{% trans "CSV Format Info" %}</p>
+        <ul class="list-disc list-inside text-xs space-y-0.5 text-blue-600 dark:text-blue-400">
+          <li>{% trans "UTF-8 BOM encoding for Thai Excel compatibility" %}</li>
+          <li>{% trans "Columns: Invoice No, Room, Tenant Name, Month, Base Rent, Water Units, Water Amt, Elec Units, Elec Amt, Total, Status, Paid Date" %}</li>
+          <li>{% trans "Filename: bills_export_{start}_to_{end}.csv" %}</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

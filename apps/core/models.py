@@ -75,6 +75,8 @@ class CustomUser(AbstractUser):
     class Role(models.TextChoices):
         SUPERADMIN = 'superadmin', 'Superadmin'
         OWNER = 'owner', 'Owner'
+        # Building Manager: สิทธิ์ระหว่าง owner กับ staff — ดูแลเฉพาะตึกที่ assign ให้
+        BUILDING_MANAGER = 'building_manager', 'Building Manager'
         STAFF = 'staff', 'Staff'
         TENANT = 'tenant', 'Tenant'
 
@@ -95,6 +97,13 @@ class CustomUser(AbstractUser):
         related_name='members',
         blank=True,
     )
+    # Buildings ที่ building_manager ดูแล — ใช้เฉพาะ role=building_manager
+    managed_buildings = models.ManyToManyField(
+        'rooms.Building',
+        blank=True,
+        related_name='managers',
+        help_text='Buildings assigned to this user (building_manager role only)',
+    )
 
     def __str__(self):
         return f'{self.username} ({self.role})'
@@ -102,6 +111,10 @@ class CustomUser(AbstractUser):
     @property
     def is_owner(self):
         return self.role == self.Role.OWNER
+
+    @property
+    def is_building_manager(self):
+        return self.role == self.Role.BUILDING_MANAGER
 
     @property
     def is_staff_member(self):
@@ -134,9 +147,22 @@ class UserDormitoryRole(models.Model):
 
 
 class ActivityLog(TenantModelMixin):
+    # Action types used by AuditMixin
+    ACTION_CREATE = 'create'
+    ACTION_UPDATE = 'update'
+    ACTION_DELETE = 'delete'
+
     user = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=200)
     detail = models.JSONField(default=dict, blank=True, encoder=UUIDEncoder)
+    # Fields for structured audit trail (เพิ่มเพื่อ track old/new value ของ critical models)
+    model_name = models.CharField(max_length=100, blank=True)
+    record_id = models.CharField(max_length=100, blank=True, null=True,
+                                  help_text='PK of the affected record (UUID or int as string)')
+    old_value = models.JSONField(null=True, blank=True, encoder=UUIDEncoder,
+                                  help_text='Snapshot of changed fields before save')
+    new_value = models.JSONField(null=True, blank=True, encoder=UUIDEncoder,
+                                  help_text='Snapshot of changed fields after save')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

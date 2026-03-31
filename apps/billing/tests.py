@@ -611,13 +611,14 @@ class BillListViewTests(TestCase):
         self.assertNotIn(self.bill_overdue, bills)
 
     def test_tenant_redirected(self):
+        # StaffRequiredMixin คืน 403 PermissionDenied สำหรับ tenant — ไม่ redirect
         from apps.core.models import CustomUser
         tenant = CustomUser.objects.create_user(
             'lv_tenant', password='pass', role='tenant', dormitory=self.dorm
         )
         self.client.force_login(tenant)
         resp = self.client.get(reverse('billing:list'))
-        self.assertRedirects(resp, reverse('tenant:home'), fetch_redirect_response=False)
+        self.assertEqual(resp.status_code, 403)
 
     def test_unauthenticated_redirected(self):
         resp = self.client.get(reverse('billing:list'))
@@ -697,3 +698,556 @@ class BillDetailViewTests(TestCase):
         self._login()
         resp = self.client.get(reverse('billing:detail', args=[other_bill.pk]))
         self.assertEqual(resp.status_code, 404)
+
+
+# ---------------------------------------------------------------------------
+# BillCSVExportView tests — Task 1.2: Export CSV with Multi-Month Range
+# ---------------------------------------------------------------------------
+
+class BillCSVExportViewTests(TestCase):
+    """
+    ทดสอบ export CSV:
+    - download ได้จริง พร้อม UTF-8 BOM
+    - date range filter ทำงานถูก
+    - building filter ทำงานถูก
+    - tenant isolation (ไม่เห็น billing ของ dormitory อื่น)
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory, CustomUser
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill
+
+        # Dormitory A — owner ที่ login
+        cls.dorm_a = Dormitory.objects.create(
+            name='Export Dorm A', address='Addr A', invoice_prefix='EA1'
+        )
+        cls.owner = CustomUser.objects.create_user(
+            'exp_owner', password='pass', role='owner', dormitory=cls.dorm_a
+        )
+
+        cls.building_a1 = Building.objects.create(dormitory=cls.dorm_a, name='Building A1')
+        cls.building_a2 = Building.objects.create(dormitory=cls.dorm_a, name='Building A2')
+
+        floor_a1 = Floor.objects.create(building=cls.building_a1, number=1)
+        floor_a2 = Floor.objects.create(building=cls.building_a2, number=1)
+
+        cls.room_a1 = Room.objects.create(floor=floor_a1, number='101', base_rent=5000)
+        cls.room_a2 = Room.objects.create(floor=floor_a2, number='201', base_rent=4000)
+
+        # Bills ใน dorm A — spread across months
+        cls.bill_jan = Bill.objects.create(
+            room=cls.room_a1, month=date(2025, 1, 1), base_rent=5000,
+            total=5000, due_date=date(2025, 1, 25), status='paid',
+        )
+        cls.bill_feb = Bill.objects.create(
+            room=cls.room_a1, month=date(2025, 2, 1), base_rent=5000,
+            total=5200, due_date=date(2025, 2, 25), status='sent',
+        )
+        cls.bill_mar = Bill.objects.create(
+            room=cls.room_a1, month=date(2025, 3, 1), base_rent=5000,
+            total=5100, due_date=date(2025, 3, 25), status='overdue',
+        )
+        # Bill ใน building_a2
+        cls.bill_b2_jan = Bill.objects.create(
+            room=cls.room_a2, month=date(2025, 1, 1), base_rent=4000,
+            total=4000, due_date=date(2025, 1, 25), status='paid',
+        )
+
+        # Dormitory B — ไม่ควรเห็นใน export ของ owner dorm A
+        cls.dorm_b = Dormitory.objects.create(
+            name='Export Dorm B', address='Addr B', invoice_prefix='EB1'
+        )
+        building_b = Building.objects.create(dormitory=cls.dorm_b, name='Building B1')
+        floor_b = Floor.objects.create(building=building_b, number=1)
+        room_b = Room.objects.create(floor=floor_b, number='301', base_rent=6000)
+        cls.bill_dorm_b = Bill.objects.create(
+            room=room_b, month=date(2025, 1, 1), base_rent=6000,
+            total=6000, due_date=date(2025, 1, 25), status='sent',
+        )
+
+    def _login(self):
+        self.client.force_login(self.owner)
+
+    def _get_csv_rows(self, params):
+        """Helper: GET export URL, decode response, strip BOM, return rows as list of lists."""
+        resp = self.client.get(reverse('billing:export'), params)
+        self.assertEqual(resp.status_code, 200)
+        # decode utf-8 แล้ว strip BOM (\ufeff) ออกจากต้นไฟล์ก่อน parse
+        content = resp.content.decode('utf-8').lstrip('\ufeff')
+        import io
+        reader = __import__('csv').reader(io.StringIO(content))
+        return list(reader)
+
+    # ------------------------------------------------------------------
+    # ทดสอบ form page (GET ไม่มี start_month)
+    # ------------------------------------------------------------------
+
+    def test_get_without_params_returns_form(self):
+        """GET /billing/export/ ไม่มี param → แสดง form ไม่ใช่ download"""
+        self._login()
+        resp = self.client.get(reverse('billing:export'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertTemplateUsed(resp, 'billing/export.html')
+
+    # ------------------------------------------------------------------
+    # ทดสอบ CSV download
+    # ------------------------------------------------------------------
+
+    def test_csv_download_returns_200_with_attachment(self):
+        """GET ที่มี start_month ต้อง return 200 พร้อม Content-Disposition attachment"""
+        self._login()
+        resp = self.client.get(reverse('billing:export'), {
+            'start_month': '2025-01',
+            'end_month': '2025-01',
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('attachment', resp.get('Content-Disposition', ''))
+        self.assertIn('bills_export_2025-01_to_2025-01.csv', resp.get('Content-Disposition', ''))
+
+    def test_csv_filename_uses_range(self):
+        """ชื่อไฟล์ต้องเป็น bills_export_{start}_to_{end}.csv"""
+        self._login()
+        resp = self.client.get(reverse('billing:export'), {
+            'start_month': '2025-01',
+            'end_month': '2025-03',
+        })
+        self.assertIn('bills_export_2025-01_to_2025-03.csv', resp.get('Content-Disposition', ''))
+
+    def test_utf8_bom_present_in_output(self):
+        """ต้องมี UTF-8 BOM (\ufeff) ที่ต้นไฟล์เพื่อให้ Excel ไทยอ่านได้"""
+        self._login()
+        resp = self.client.get(reverse('billing:export'), {
+            'start_month': '2025-01',
+            'end_month': '2025-01',
+        })
+        self.assertEqual(resp.status_code, 200)
+        # ตรวจ BOM bytes ที่ต้นไฟล์
+        self.assertTrue(resp.content.startswith(b'\xef\xbb\xbf'),
+                        'CSV file must start with UTF-8 BOM (0xEF 0xBB 0xBF)')
+
+    def test_csv_header_columns_order(self):
+        """Header row ต้องมี columns ตาม spec ในลำดับที่กำหนด"""
+        self._login()
+        rows = self._get_csv_rows({'start_month': '2025-01', 'end_month': '2025-01'})
+        self.assertGreater(len(rows), 0)
+        header = rows[0]
+        expected_header = [
+            'Invoice No', 'Room', 'Tenant Name', 'Month',
+            'Base Rent', 'Water Units', 'Water Amt', 'Elec Units', 'Elec Amt',
+            'Total', 'Status', 'Paid Date',
+        ]
+        self.assertEqual(header, expected_header)
+
+    # ------------------------------------------------------------------
+    # ทดสอบ date range filter
+    # ------------------------------------------------------------------
+
+    def test_single_month_filter(self):
+        """start_month=end_month=2025-01 → export เฉพาะ Jan bills"""
+        self._login()
+        rows = self._get_csv_rows({'start_month': '2025-01', 'end_month': '2025-01'})
+        # header + bills ใน Jan ของ dorm A (bill_jan + bill_b2_jan)
+        data_rows = rows[1:]
+        months = [r[3] for r in data_rows]  # column index 3 = Month
+        self.assertTrue(all(m == '2025-01' for m in months),
+                        f'Expected all months 2025-01, got: {months}')
+
+    def test_multi_month_range_includes_all_months(self):
+        """start_month=2025-01, end_month=2025-03 → export bills ทั้ง 3 เดือน"""
+        self._login()
+        rows = self._get_csv_rows({'start_month': '2025-01', 'end_month': '2025-03'})
+        data_rows = rows[1:]
+        months = {r[3] for r in data_rows}
+        self.assertIn('2025-01', months)
+        self.assertIn('2025-02', months)
+        self.assertIn('2025-03', months)
+
+    def test_out_of_range_month_excluded(self):
+        """bill_mar (2025-03) ต้องไม่อยู่ใน export ถ้า end_month=2025-02"""
+        self._login()
+        rows = self._get_csv_rows({'start_month': '2025-01', 'end_month': '2025-02'})
+        data_rows = rows[1:]
+        months = [r[3] for r in data_rows]
+        self.assertNotIn('2025-03', months)
+
+    def test_start_after_end_swapped_gracefully(self):
+        """ถ้า start_month > end_month ระบบต้อง swap และยังคง export ได้ไม่ error"""
+        self._login()
+        resp = self.client.get(reverse('billing:export'), {
+            'start_month': '2025-03',
+            'end_month': '2025-01',
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('attachment', resp.get('Content-Disposition', ''))
+
+    def test_invalid_start_month_redirects(self):
+        """start_month format ผิด → redirect กลับไป export form"""
+        self._login()
+        resp = self.client.get(reverse('billing:export'), {
+            'start_month': 'not-a-date',
+            'end_month': '2025-01',
+        })
+        self.assertEqual(resp.status_code, 302)
+
+    # ------------------------------------------------------------------
+    # ทดสอบ building filter
+    # ------------------------------------------------------------------
+
+    def test_building_filter_limits_results(self):
+        """building_id filter ต้องแสดงเฉพาะ bills ในตึกนั้น"""
+        self._login()
+        rows = self._get_csv_rows({
+            'start_month': '2025-01',
+            'end_month': '2025-01',
+            'building_id': str(self.building_a2.pk),
+        })
+        data_rows = rows[1:]
+        # ตึก A2 มีแค่ room_a2 (201) → bill_b2_jan
+        self.assertEqual(len(data_rows), 1)
+        self.assertEqual(data_rows[0][1], '201')  # column 1 = Room
+
+    def test_no_building_filter_returns_all_buildings(self):
+        """ไม่ส่ง building_id → export bills ทุกตึกของ dormitory"""
+        self._login()
+        rows = self._get_csv_rows({'start_month': '2025-01', 'end_month': '2025-01'})
+        data_rows = rows[1:]
+        rooms = {r[1] for r in data_rows}  # column 1 = Room
+        # Jan มีทั้ง room 101 (building A1) และ 201 (building A2)
+        self.assertIn('101', rooms)
+        self.assertIn('201', rooms)
+
+    # ------------------------------------------------------------------
+    # ทดสอบ tenant isolation — ต้องไม่เห็น bill ของ dormitory อื่น
+    # ------------------------------------------------------------------
+
+    def test_tenant_isolation_excludes_other_dormitory_bills(self):
+        """owner ของ dorm_a ต้องไม่เห็น bill ของ dorm_b ใน CSV เลย"""
+        self._login()
+        rows = self._get_csv_rows({'start_month': '2025-01', 'end_month': '2025-01'})
+        data_rows = rows[1:]
+        # bill_dorm_b มี invoice_number ขึ้นต้น EB1
+        invoice_numbers = [r[0] for r in data_rows]
+        for inv in invoice_numbers:
+            self.assertFalse(
+                inv.startswith('EB1'),
+                f'Found dorm_b bill in export: {inv}'
+            )
+
+    def test_other_dormitory_bill_count_not_included(self):
+        """จำนวน rows ต้องตรงกับ bill ของ dorm_a เท่านั้น ใน range Jan 2025"""
+        self._login()
+        rows = self._get_csv_rows({'start_month': '2025-01', 'end_month': '2025-01'})
+        data_rows = rows[1:]
+        # dorm_a Jan 2025: bill_jan (room 101) + bill_b2_jan (room 201) = 2 bills
+        self.assertEqual(len(data_rows), 2)
+
+    def test_unauthenticated_redirected(self):
+        """ผู้ใช้ที่ไม่ได้ login ต้อง redirect"""
+        resp = self.client.get(reverse('billing:export'), {
+            'start_month': '2025-01',
+            'end_month': '2025-01',
+        })
+        self.assertEqual(resp.status_code, 302)
+
+
+# ---------------------------------------------------------------------------
+# BillCSVExportView N+1 query tests — Task 2.0
+# ---------------------------------------------------------------------------
+
+class BillCSVExportViewN1QueryTests(TestCase):
+    """
+    ยืนยันว่า BillCSVExportView ไม่มี N+1 query —
+    จำนวน DB queries ต้องไม่ scale ตามจำนวน Bill (O(1) ไม่ใช่ O(n))
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory, CustomUser
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill
+        from apps.tenants.models import TenantProfile, Lease
+
+        cls.dorm = Dormitory.objects.create(
+            name='N1 Dorm', address='Addr', invoice_prefix='N1T'
+        )
+        cls.owner = CustomUser.objects.create_user(
+            'n1_owner', password='pass', role='owner', dormitory=cls.dorm
+        )
+
+        building = Building.objects.create(dormitory=cls.dorm, name='N1 Building')
+        floor = Floor.objects.create(building=building, number=1)
+
+        # สร้าง 10 ห้องพร้อม bill แต่ละห้อง เพื่อวัดว่า query count ไม่ scale
+        cls.rooms = []
+        cls.bills = []
+        for i in range(1, 11):
+            room = Room.objects.create(
+                floor=floor, number=str(100 + i), base_rent=5000,
+                status=Room.Status.OCCUPIED,
+            )
+            cls.rooms.append(room)
+
+            bill = Bill.objects.create(
+                room=room,
+                month=date(2026, 6, 1),
+                base_rent=5000,
+                total=5000,
+                due_date=date(2026, 6, 25),
+            )
+            cls.bills.append(bill)
+
+            # เพิ่ม TenantProfile บาง room เพื่อให้ผ่าน branch tenant_profiles_cache
+            if i % 2 == 0:
+                user = CustomUser.objects.create_user(
+                    f'n1_tenant_{i}', password='pass', role='tenant', dormitory=cls.dorm
+                )
+                profile = TenantProfile.objects.create(
+                    user=user, room=room, dormitory=cls.dorm
+                )
+                Lease.objects.create(
+                    tenant=profile, room=room, status='active',
+                    start_date=date(2026, 1, 1), dormitory=cls.dorm
+                )
+
+    def _export_url_params(self):
+        return {'start_month': '2026-06', 'end_month': '2026-06'}
+
+    def test_query_count_does_not_scale_with_bill_count(self):
+        """
+        วัด query count สำหรับ 10 bills — ต้องไม่เกิน threshold คงที่
+        (select_related + prefetch_related ทำให้ใช้ queries คงที่ ไม่ว่าจะมีกี่แถว)
+        ปกติจะอยู่ที่ ~6 queries: session, user, dormitory,
+        bills+select_related, prefetch leases, prefetch tenant_profiles
+        กำหนด upper bound ที่ 12 เพื่อให้มี margin แต่ต้องน้อยกว่า O(n)=10×2+base=~23
+        """
+        self.client.force_login(self.owner)
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+
+        with CaptureQueriesContext(connection) as ctx:
+            self.client.get(reverse('billing:export'), self._export_url_params())
+
+        actual = len(ctx)
+        # N+1 scenario จะได้ ~23 queries (10 bills × 2 per-bill queries + ~3 base)
+        # หลังแก้แล้วต้องได้ไม่เกิน 12 (O(1) queries)
+        self.assertLessEqual(
+            actual, 12,
+            f'Expected at most 12 queries (O(1)) for 10-bill CSV export, got {actual}. '
+            f'N+1 bug may have returned.'
+        )
+
+    def test_query_count_is_constant_regardless_of_bill_count(self):
+        """
+        เปรียบเทียบ query count ระหว่าง export 1 เดือน (10 bills) กับ 0 bills —
+        ต้องต่างกันน้อยมาก (ไม่ใช่ N queries เพิ่มขึ้นตาม bill)
+        """
+        from apps.billing.models import Bill
+        from apps.core.models import Dormitory
+        from apps.rooms.models import Building, Floor, Room
+
+        # สร้าง dormitory ใหม่ที่ไม่มี bill ในเดือน 2026-07
+        dorm_empty = Dormitory.objects.create(
+            name='Empty Dorm', address='Empty', invoice_prefix='EMP'
+        )
+        owner_empty = self.owner.__class__.objects.create_user(
+            'n1_empty_owner', password='pass', role='owner', dormitory=dorm_empty
+        )
+
+        self.client.force_login(self.owner)
+        from django.test.utils import CaptureQueriesContext
+        from django.db import connection
+
+        # วัด queries สำหรับ 10 bills
+        with CaptureQueriesContext(connection) as ctx_10:
+            self.client.get(reverse('billing:export'), self._export_url_params())
+        count_10_bills = len(ctx_10)
+
+        # Export เดือนที่ไม่มี bill (ต้องได้ query count ใกล้เคียงกัน — ไม่ใช่ 0 vs N)
+        with CaptureQueriesContext(connection) as ctx_0:
+            self.client.get(reverse('billing:export'), {'start_month': '2020-01', 'end_month': '2020-01'})
+        count_0_bills = len(ctx_0)
+
+        # ถ้าแก้ N+1 ได้แล้ว: ต่างกันไม่เกิน 3 queries (prefetch อาจมี/ไม่มี result)
+        # ถ้ายัง N+1: จะต่างกัน ~20 queries (10 bills × 2 queries each)
+        diff = abs(count_10_bills - count_0_bills)
+        self.assertLessEqual(
+            diff, 5,
+            f'Query count difference between 10-bill export ({count_10_bills}) '
+            f'and 0-bill export ({count_0_bills}) is {diff} — '
+            f'expected <= 5 (should be O(1), not O(n))'
+        )
+
+
+# ---------------------------------------------------------------------------
+# REST API tests — Task 3.1
+# ---------------------------------------------------------------------------
+
+class BillAPIListTests(TestCase):
+    """
+    ทดสอบ GET /api/bills/
+    - authenticated user → 200 + bills list
+    - unauthenticated → 401
+    - tenant isolation: owner A ไม่เห็น bills ของ owner B
+    - pagination ทำงาน
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from rest_framework.authtoken.models import Token
+        from apps.core.models import Dormitory, CustomUser
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill
+
+        # Dormitory A — owner ที่ test
+        cls.dorm_a = Dormitory.objects.create(
+            name='API Dorm A', address='A', invoice_prefix='AA1'
+        )
+        cls.owner_a = CustomUser.objects.create_user(
+            'api_owner_a', password='pass', role='owner', dormitory=cls.dorm_a
+        )
+        cls.token_a = Token.objects.create(user=cls.owner_a)
+
+        b = Building.objects.create(dormitory=cls.dorm_a, name='BA')
+        f = Floor.objects.create(building=b, number=1)
+        cls.room_a = Room.objects.create(floor=f, number='101', base_rent=5000)
+
+        cls.bill_a1 = Bill.objects.create(
+            room=cls.room_a, month=date(2025, 1, 1), base_rent=5000,
+            total=5000, due_date=date(2025, 1, 25), status='paid',
+        )
+        cls.bill_a2 = Bill.objects.create(
+            room=cls.room_a, month=date(2025, 2, 1), base_rent=5000,
+            total=5200, due_date=date(2025, 2, 25), status='sent',
+        )
+
+        # Dormitory B — ไม่ควรเห็นจาก owner A
+        cls.dorm_b = Dormitory.objects.create(
+            name='API Dorm B', address='B', invoice_prefix='BB1'
+        )
+        cls.owner_b = CustomUser.objects.create_user(
+            'api_owner_b', password='pass', role='owner', dormitory=cls.dorm_b
+        )
+        cls.token_b = Token.objects.create(user=cls.owner_b)
+
+        bb = Building.objects.create(dormitory=cls.dorm_b, name='BB')
+        fb = Floor.objects.create(building=bb, number=1)
+        room_b = Room.objects.create(floor=fb, number='101', base_rent=4000)
+        cls.bill_b = Bill.objects.create(
+            room=room_b, month=date(2025, 1, 1), base_rent=4000,
+            total=4000, due_date=date(2025, 1, 25),
+        )
+
+    def _auth_headers(self, token):
+        return {'HTTP_AUTHORIZATION': f'Token {token.key}'}
+
+    def test_authenticated_returns_200_with_bills(self):
+        """authenticated user ต้องได้ 200 และเห็น bills ของตัวเอง"""
+        resp = self.client.get('/api/bills/', **self._auth_headers(self.token_a))
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn('results', data)
+        ids = [str(r['id']) for r in data['results']]
+        self.assertIn(str(self.bill_a1.pk), ids)
+        self.assertIn(str(self.bill_a2.pk), ids)
+
+    def test_unauthenticated_returns_401(self):
+        """ไม่มี token → 401 Unauthorized"""
+        resp = self.client.get('/api/bills/')
+        self.assertEqual(resp.status_code, 401)
+
+    def test_owner_a_cannot_see_owner_b_bills(self):
+        """tenant isolation: owner A ต้องไม่เห็น bills ของ owner B"""
+        resp = self.client.get('/api/bills/', **self._auth_headers(self.token_a))
+        self.assertEqual(resp.status_code, 200)
+        ids = [str(r['id']) for r in resp.json()['results']]
+        self.assertNotIn(str(self.bill_b.pk), ids)
+
+    def test_pagination_returns_count_and_next(self):
+        """pagination response ต้องมี count field"""
+        resp = self.client.get('/api/bills/', **self._auth_headers(self.token_a))
+        data = resp.json()
+        self.assertIn('count', data)
+        self.assertGreaterEqual(data['count'], 2)
+
+    def test_filter_by_status(self):
+        """?status=paid ต้องคืน bills ที่ paid เท่านั้น"""
+        resp = self.client.get('/api/bills/?status=paid', **self._auth_headers(self.token_a))
+        self.assertEqual(resp.status_code, 200)
+        statuses = [r['status'] for r in resp.json()['results']]
+        self.assertTrue(all(s == 'paid' for s in statuses))
+
+    def test_filter_by_month(self):
+        """?month=2025-01 ต้องคืน bills ของเดือน 2025-01 เท่านั้น"""
+        resp = self.client.get('/api/bills/?month=2025-01', **self._auth_headers(self.token_a))
+        self.assertEqual(resp.status_code, 200)
+        ids = [str(r['id']) for r in resp.json()['results']]
+        self.assertIn(str(self.bill_a1.pk), ids)
+        self.assertNotIn(str(self.bill_a2.pk), ids)
+
+
+class BillAPIDetailTests(TestCase):
+    """
+    ทดสอบ GET /api/bills/<id>/
+    - authenticated + owner ของ bill → 200 พร้อม payment field
+    - IDOR: owner B เรียก bill ของ owner A → 404
+    - unauthenticated → 401
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from rest_framework.authtoken.models import Token
+        from apps.core.models import Dormitory, CustomUser
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill
+
+        cls.dorm_a = Dormitory.objects.create(
+            name='Det Dorm A', address='A', invoice_prefix='DA2'
+        )
+        cls.owner_a = CustomUser.objects.create_user(
+            'det_owner_a', password='pass', role='owner', dormitory=cls.dorm_a
+        )
+        cls.token_a = Token.objects.create(user=cls.owner_a)
+
+        b = Building.objects.create(dormitory=cls.dorm_a, name='B')
+        f = Floor.objects.create(building=b, number=1)
+        room = Room.objects.create(floor=f, number='101', base_rent=5000)
+        cls.bill = Bill.objects.create(
+            room=room, month=date(2025, 3, 1), base_rent=5000,
+            total=5000, due_date=date(2025, 3, 25), status='sent',
+        )
+
+        # Owner B ที่ไม่ควรเห็น bill ของ owner A
+        cls.dorm_b = Dormitory.objects.create(name='Det Dorm B', address='B')
+        cls.owner_b = CustomUser.objects.create_user(
+            'det_owner_b', password='pass', role='owner', dormitory=cls.dorm_b
+        )
+        cls.token_b = Token.objects.create(user=cls.owner_b)
+
+    def _auth_headers(self, token):
+        return {'HTTP_AUTHORIZATION': f'Token {token.key}'}
+
+    def test_owner_gets_own_bill_detail(self):
+        """GET /api/bills/<id>/ ด้วย owner ของ bill → 200"""
+        resp = self.client.get(f'/api/bills/{self.bill.pk}/', **self._auth_headers(self.token_a))
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(str(data['id']), str(self.bill.pk))
+        self.assertIn('payment', data)
+        self.assertIn('status', data)
+
+    def test_detail_no_payment_returns_null(self):
+        """bill ที่ยังไม่มี payment → payment field เป็น null"""
+        resp = self.client.get(f'/api/bills/{self.bill.pk}/', **self._auth_headers(self.token_a))
+        self.assertIsNone(resp.json()['payment'])
+
+    def test_cross_dorm_detail_returns_404(self):
+        """IDOR protection: owner B ต้องไม่เห็น bill ของ owner A → 404"""
+        resp = self.client.get(f'/api/bills/{self.bill.pk}/', **self._auth_headers(self.token_b))
+        self.assertEqual(resp.status_code, 404)
+
+    def test_unauthenticated_detail_returns_401(self):
+        """ไม่มี token → 401"""
+        resp = self.client.get(f'/api/bills/{self.bill.pk}/')
+        self.assertEqual(resp.status_code, 401)

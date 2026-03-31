@@ -1,6 +1,4 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
-from django.utils.decorators import method_decorator
 from django.views import View
 from django.contrib import messages
 from django.utils.translation import gettext_lazy as _
@@ -8,7 +6,7 @@ from django.utils import timezone
 
 from apps.notifications.models import Parcel, Broadcast
 
-from apps.core.decorators import staff_required
+from apps.core.mixins import StaffRequiredMixin
 from apps.core.utils import SimpleForm
 from apps.core.models import ActivityLog
 
@@ -21,8 +19,7 @@ def _dorm_rooms(user, dormitory=None):
     ).select_related('floor', 'floor__building').prefetch_related('tenant_profiles__user')
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class ParcelCreateView(View):
+class ParcelCreateView(StaffRequiredMixin, View):
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         return render(request, 'notifications/parcel_log.html', {
@@ -80,8 +77,7 @@ class ParcelCreateView(View):
         return redirect('notifications:parcel_list')
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class ParcelListView(View):
+class ParcelListView(StaffRequiredMixin, View):
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         parcels = Parcel.objects.filter(
@@ -90,8 +86,7 @@ class ParcelListView(View):
         return render(request, 'notifications/parcel_list.html', {'parcels': parcels})
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class BroadcastCreateView(View):
+class BroadcastCreateView(StaffRequiredMixin, View):
     def _audience_context(self, dorm):
         from apps.rooms.models import Building, Floor
         buildings = Building.objects.filter(dormitory=dorm) if dorm else []

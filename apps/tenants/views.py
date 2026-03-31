@@ -1,13 +1,12 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
-from django.utils.decorators import method_decorator
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views import View
 from django.contrib import messages
 from django.utils.translation import gettext_lazy as _
 
 from apps.tenants.models import TenantProfile, Lease
 
-from apps.core.decorators import staff_required
+from apps.core.mixins import StaffRequiredMixin, OwnerRequiredMixin
 from apps.core.utils import SimpleForm
 from apps.core.models import ActivityLog
 
@@ -26,8 +25,7 @@ def _dorm_profiles(user, dormitory=None):
     ).distinct().select_related('user', 'room', 'room__floor', 'room__floor__building')
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class TenantListView(View):
+class TenantListView(StaffRequiredMixin, View):
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         profiles = _dorm_profiles(request.user, dormitory=dorm)
@@ -48,8 +46,7 @@ class TenantListView(View):
         })
 
 
-@method_decorator(login_required, name='dispatch')
-class TenantDetailView(View):
+class TenantDetailView(LoginRequiredMixin, View):
     def get(self, request, pk):
         # Tenants may only view their own profile; staff/owners see any profile in their dorm
         if request.user.role == 'tenant':
@@ -76,8 +73,7 @@ class TenantDetailView(View):
         })
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class TenantCreateView(View):
+class TenantCreateView(StaffRequiredMixin, View):
     def _context(self, user, data=None, dormitory=None):
         from apps.rooms.models import Room
         dorm = dormitory or user.dormitory
@@ -161,8 +157,7 @@ class TenantCreateView(View):
         return redirect('tenants:detail', pk=profile.pk)
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class TenantImportView(View):
+class TenantImportView(StaffRequiredMixin, View):
     """Import tenants from CSV or Excel (xlsx) file."""
 
     REQUIRED_COLS = {'username', 'first_name', 'last_name'}
@@ -259,8 +254,7 @@ class TenantImportView(View):
             return result
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class TenantUpdateView(View):
+class TenantUpdateView(StaffRequiredMixin, View):
     def get(self, request, pk):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         profile = get_object_or_404(_dorm_profiles(request.user, dormitory=dorm), pk=pk)
@@ -310,8 +304,46 @@ class TenantUpdateView(View):
         return redirect('tenants:detail', pk=profile.pk)
 
 
-@method_decorator(login_required, name='dispatch')
-class TenantHomeView(View):
+class AnonymizeTenantView(OwnerRequiredMixin, View):
+    """
+    POST /tenants/<pk>/anonymize/ — PDPA Right to be Forgotten
+    ล้างข้อมูลส่วนบุคคลของผู้เช่า (irreversible action)
+    ต้อง POST พร้อม confirm=true เพื่อยืนยัน
+    เฉพาะ owner/superadmin เท่านั้น — ไม่ให้ staff ทำ
+    """
+
+    def get(self, request, pk):
+        """แสดง confirm dialog ก่อน anonymize"""
+        dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
+        profile = get_object_or_404(_dorm_profiles(request.user, dormitory=dorm), pk=pk)
+        return render(request, 'tenants/anonymize_confirm.html', {'profile': profile})
+
+    def post(self, request, pk):
+        """
+        ดำเนินการ anonymize — ต้องส่ง confirm=true
+        ถ้าไม่มี confirm → 400 Bad Request
+        ถ้า tenant ไม่อยู่ใน dormitory ของ owner → 404 (IDOR protection)
+        """
+        from django.http import HttpResponseBadRequest
+
+        dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
+        # tenant isolation: เฉพาะ profile ที่อยู่ใน dormitory ของ owner เท่านั้น
+        profile = get_object_or_404(_dorm_profiles(request.user, dormitory=dorm), pk=pk)
+
+        if request.POST.get('confirm') != 'true':
+            return HttpResponseBadRequest('Confirmation required. Send confirm=true to proceed.')
+
+        # ดำเนินการ anonymize — irreversible
+        profile.anonymize(performed_by=request.user)
+
+        messages.success(
+            request,
+            _('Personal data for %(name)s has been anonymized (PDPA).') % {'name': str(pk)},
+        )
+        return redirect('tenants:list')
+
+
+class TenantHomeView(LoginRequiredMixin, View):
     """Tenant self-service home page (accessible at /tenant/home/)."""
 
     def get(self, request):
@@ -372,8 +404,7 @@ class TenantHomeView(View):
         })
 
 
-@method_decorator(login_required, name='dispatch')
-class TenantBillDetailView(View):
+class TenantBillDetailView(LoginRequiredMixin, View):
     """Tenant bill detail with payment QR."""
 
     def get(self, request, pk):
@@ -414,8 +445,7 @@ class TenantBillDetailView(View):
         })
 
 
-@method_decorator(login_required, name='dispatch')
-class TenantBillsView(View):
+class TenantBillsView(LoginRequiredMixin, View):
     """Tenant bill history page."""
 
     def get(self, request):
@@ -439,8 +469,7 @@ class TenantBillsView(View):
         })
 
 
-@method_decorator(login_required, name='dispatch')
-class TenantParcelsView(View):
+class TenantParcelsView(LoginRequiredMixin, View):
     """Tenant parcel history page."""
 
     def get(self, request):
@@ -468,8 +497,7 @@ class TenantParcelsView(View):
         })
 
 
-@method_decorator(login_required, name='dispatch')
-class TenantProfileView(View):
+class TenantProfileView(LoginRequiredMixin, View):
     """Tenant profile page."""
 
     def get(self, request):

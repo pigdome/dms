@@ -16,6 +16,20 @@
     <div class="max-w-2xl mx-auto">
         <!-- Progress Indicator -->
         <div class="flex flex-col gap-3 p-6 bg-white dark:bg-slate-900 rounded-xl mx-4 mt-4 border border-slate-200 dark:border-slate-800">
+            <!-- Step dots -->
+            <div class="flex items-center gap-2 mb-1">
+                {% for s in "123" %}
+                {% with forloop.counter as i %}
+                <div class="flex items-center {% if not forloop.last %}flex-1{% endif %}">
+                    <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0
+                        {% if i < step %}bg-emerald-500 text-white{% elif i == step %}bg-primary text-white{% else %}bg-slate-200 dark:bg-slate-700 text-slate-400{% endif %}">
+                        {% if i < step %}<i class="fa-solid fa-check text-[10px]"></i>{% else %}{{ i }}{% endif %}
+                    </div>
+                    {% if not forloop.last %}<div class="flex-1 h-0.5 mx-1 {% if i < step %}bg-emerald-400{% else %}bg-slate-200 dark:bg-slate-700{% endif %}"></div>{% endif %}
+                </div>
+                {% endwith %}
+                {% endfor %}
+            </div>
             <div class="flex gap-6 justify-between items-center">
                 <p class="text-primary text-base font-bold leading-normal">
                     {% if step == 1 %}{% trans "Step 1: Building Info" %}
@@ -28,11 +42,23 @@
                 <div class="h-full rounded-full bg-primary transition-all duration-500" style="width: {% if step == 1 %}33{% elif step == 2 %}66{% else %}100{% endif %}%;"></div>
             </div>
             <p class="text-slate-600 dark:text-slate-400 text-sm italic">
-                {% if step == 1 %}{% trans "Start with your dormitory's basic information" %}
-                {% elif step == 2 %}{% trans "Configure your buildings and rooms" %}
-                {% else %}{% trans "Set up billing rates and payment settings" %}{% endif %}
+                {% if step == 1 %}{% trans "เริ่มด้วยข้อมูลพื้นฐานของหอพัก" %}
+                {% elif step == 2 %}{% trans "ตั้งค่าอาคารและห้องพัก" %}
+                {% else %}{% trans "กำหนดอัตราค่าน้ำ-ไฟ และรอบบิล (ตั้งทีหลังก็ได้)" %}{% endif %}
             </p>
         </div>
+
+        <!-- Error messages -->
+        {% if messages %}
+        <div class="mx-4 mt-3">
+            {% for message in messages %}
+            <div class="flex items-center gap-3 p-4 rounded-xl border {% if message.tags == 'error' %}bg-rose-50 border-rose-200 text-rose-700{% else %}bg-emerald-50 border-emerald-200 text-emerald-700{% endif %}">
+                <i class="fa-solid {% if message.tags == 'error' %}fa-circle-exclamation{% else %}fa-circle-check{% endif %} shrink-0"></i>
+                <p class="text-sm font-medium">{{ message }}</p>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
 
         <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
@@ -53,7 +79,7 @@
                                 <i class="fa-solid fa-building-columns"></i>
                                 <input type="text" name="name" value="{{ form.name.value|default:'' }}" required
                                        class="form-input w-full pl-11 rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:border-primary focus:ring-primary h-14"
-                                       placeholder="{% trans "e.g. Baan Im Suk Building A" %}"/>
+                                       placeholder="{% trans "เช่น: หอพักมิตรภาพ, หอสุขสันต์ อาคาร A" %}"/>
                             </div>
                         </div>
                         <div class="flex flex-col gap-2">
@@ -62,7 +88,7 @@
                                 <i class="fa-solid fa-location-dot"></i>
                                 <textarea name="address" rows="4" required
                                           class="form-input w-full pl-11 rounded-lg border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:border-primary focus:ring-primary"
-                                          placeholder="{% trans "Street address, district, province, postal code" %}">{{ form.address.value|default:'' }}</textarea>
+                                          placeholder="{% trans "เลขที่ ถนน แขวง/ตำบล เขต/อำเภอ จังหวัด รหัสไปรษณีย์" %}">{{ form.address.value|default:'' }}</textarea>
                             </div>
                         </div>
                         <div class="flex flex-col gap-2">
@@ -155,25 +181,37 @@
             </main>
 
             <!-- Footer Actions -->
-            <footer class="sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 p-4 flex gap-4 mx-0 mt-4">
-                {% if step > 1 %}
-                <a href="?step={{ step|add:'-1' }}" class="flex-1 py-4 px-6 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-center hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                    {% trans "Back" %}
+            <footer class="sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 p-4 mx-0 mt-4">
+                {% if step == 3 %}
+                <div class="flex gap-4 mb-3">
+                    <a href="?step=2" class="flex-1 py-4 px-6 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-center hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        {% trans "Back" %}
+                    </a>
+                    <button type="submit" class="flex-[2] py-4 px-6 rounded-xl bg-primary text-white font-bold hover:opacity-90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-circle-check"></i>
+                        {% trans "Complete Setup" %}
+                    </button>
+                </div>
+                <a href="{% url 'dashboard:index' %}" class="block text-center text-sm text-slate-400 hover:text-slate-600 py-2">
+                    {% trans "ข้ามขั้นตอนนี้ก่อน (ตั้งค่าบิลทีหลังในหน้า Settings)" %}
                 </a>
                 {% else %}
-                <a href="{% url 'dashboard:index' %}" class="flex-1 py-4 px-6 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-center hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                    {% trans "Cancel" %}
-                </a>
-                {% endif %}
-                <button type="submit" class="flex-[2] py-4 px-6 rounded-xl bg-primary text-white font-bold hover:opacity-90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2">
-                    {% if step < 3 %}
-                    {% trans "Next" %}: {% if step == 1 %}{% trans "Rooms & Floors" %}{% else %}{% trans "Billing" %}{% endif %}
-                    <i class="fa-solid fa-chevron-right"></i>
+                <div class="flex gap-4">
+                    {% if step > 1 %}
+                    <a href="?step={{ step|add:'-1' }}" class="flex-1 py-4 px-6 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-center hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        {% trans "Back" %}
+                    </a>
                     {% else %}
-                    <i class="fa-solid fa-circle-check"></i>
-                    {% trans "Complete Setup" %}
+                    <a href="{% url 'dashboard:index' %}" class="flex-1 py-4 px-6 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-center hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        {% trans "Cancel" %}
+                    </a>
                     {% endif %}
-                </button>
+                    <button type="submit" class="flex-[2] py-4 px-6 rounded-xl bg-primary text-white font-bold hover:opacity-90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2">
+                        {% trans "Next" %}: {% if step == 1 %}{% trans "Rooms & Floors" %}{% else %}{% trans "Billing" %}{% endif %}
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                </div>
+                {% endif %}
             </footer>
         </form>
     </div>

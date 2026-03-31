@@ -5,26 +5,22 @@ import json
 
 from django.conf import settings as django_settings
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect, render, get_object_or_404
 from django.utils import timezone
-from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from django.shortcuts import get_object_or_404
-
 from apps.billing.models import Bill, BillingSettings, Payment
 from apps.core.models import ActivityLog
 
-from apps.core.decorators import staff_required
+from apps.core.mixins import OwnerRequiredMixin, StaffRequiredMixin
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class BillingSettingsView(View):
+class BillingSettingsView(OwnerRequiredMixin, View):
+    """จัดการ Billing Settings — เฉพาะ owner/superadmin เท่านั้น (ไม่ใช่ staff)"""
     def _get_or_create_settings(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         if not dorm:
@@ -72,8 +68,8 @@ class BillingSettingsView(View):
         })
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class BillListView(View):
+class BillListView(StaffRequiredMixin, View):
+    """รายการ Bills — owner/superadmin/staff เข้าได้"""
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         if not dorm:
@@ -108,8 +104,8 @@ class BillListView(View):
         })
 
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class BillDetailView(View):
+class BillDetailView(StaffRequiredMixin, View):
+    """รายละเอียด Bill — owner/superadmin/staff เข้าได้"""
     def get(self, request, pk):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         bill = get_object_or_404(
@@ -212,65 +208,147 @@ def tmr_webhook(request):
 
     return JsonResponse({'status': 'ok'})
 
-@method_decorator([login_required, staff_required], name='dispatch')
-class BillCSVExportView(View):
+class BillCSVExportView(OwnerRequiredMixin, View):
+    """
+    Export bill data เป็น CSV — เฉพาะ owner/superadmin เท่านั้น (ข้อมูลการเงินสำคัญ)
+    รองรับ date range (start_month–end_month) และ building filter
+    GET ไม่มี start_month → แสดง form ให้กรอก
+    GET มี start_month → download CSV ทันที
+    """
+
     def get(self, request):
+        from datetime import datetime
+        from apps.rooms.models import Building
+
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         if not dorm:
-            return HttpResponse(status=403)
+            messages.error(request, _('No dormitory associated with your account.'))
+            return redirect('dashboard:index')
 
-        bills = Bill.objects.filter(
-            room__floor__building__dormitory=dorm
-        ).select_related('room', 'room__floor', 'room__floor__building').order_by('-month', '-created_at')
+        start_month_str = request.GET.get('start_month', '').strip()
+        end_month_str = request.GET.get('end_month', '').strip()
+        building_id = request.GET.get('building_id', '').strip()
 
-        # Reuse filters (simplified)
-        status = request.GET.get('status')
-        if status:
-            bills = bills.filter(status=status)
-        month = request.GET.get('month')
-        if month:
+        # ถ้าไม่มี start_month → แสดง export form เพื่อให้กรอก date range
+        if not start_month_str:
+            buildings = Building.objects.filter(dormitory=dorm).order_by('name')
+            now = timezone.now()
+            default_month = now.strftime('%Y-%m')
+            return render(request, 'billing/export.html', {
+                'buildings': buildings,
+                'default_start_month': default_month,
+                'default_end_month': default_month,
+            })
+
+        # Validate และ parse start_month / end_month
+        try:
+            start_date = datetime.strptime(start_month_str, '%Y-%m').date()
+        except ValueError:
+            messages.error(request, _('Invalid start month format. Use YYYY-MM.'))
+            return redirect('billing:export')
+
+        if end_month_str:
             try:
-                from datetime import datetime
-                d = datetime.strptime(month, '%Y-%m').date()
-                bills = bills.filter(month=d)
-            except Exception:
-                pass
+                end_date = datetime.strptime(end_month_str, '%Y-%m').date()
+            except ValueError:
+                messages.error(request, _('Invalid end month format. Use YYYY-MM.'))
+                return redirect('billing:export')
+        else:
+            # ถ้าไม่ระบุ end_month ใช้ start_month เป็น end_month เดียวกัน
+            end_date = start_date
 
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="bills_{dorm.pk}_{timezone.now().date()}.csv"'
+        # กัน start > end
+        if start_date > end_date:
+            start_date, end_date = end_date, start_date
+
+        # Query bills ใน date range — enforce tenant isolation ด้วย dormitory filter
+        # ใช้ prefetch_related สำหรับ leases และ tenant_profiles เพื่อหลีกเลี่ยง N+1 query
+        # (loop ต้องการ active lease + tenant profile ของแต่ละห้อง — prefetch ให้โหลดเป็น batch)
+        from django.db.models import Prefetch
+        from apps.tenants.models import Lease, TenantProfile
+
+        active_lease_prefetch = Prefetch(
+            'room__leases',
+            queryset=Lease.objects.filter(status='active').select_related('tenant__user'),
+            to_attr='active_leases_cache',
+        )
+        tenant_profile_prefetch = Prefetch(
+            'room__tenant_profiles',
+            queryset=TenantProfile.objects.select_related('user'),
+            to_attr='tenant_profiles_cache',
+        )
+
+        bills = (
+            Bill.objects.filter(
+                room__floor__building__dormitory=dorm,
+                month__gte=start_date,
+                month__lte=end_date,
+            )
+            .select_related(
+                'room',
+                'room__floor',
+                'room__floor__building',
+                'payment',
+            )
+            .prefetch_related(
+                active_lease_prefetch,
+                tenant_profile_prefetch,
+            )
+            .order_by('month', 'room__floor__building__name', 'room__number')
+        )
+
+        # Optional building filter — ยังคง enforce dormitory ผ่าน query ข้างบน
+        if building_id:
+            bills = bills.filter(room__floor__building_id=building_id)
+
+        # สร้าง CSV response พร้อม UTF-8 BOM เพื่อให้ Excel ภาษาไทยอ่านได้
+        # ใช้ charset=utf-8 และ write BOM เองเพื่อควบคุมได้แน่นอน (utf-8-sig อาจ double BOM)
+        filename = f'bills_export_{start_month_str}_to_{end_month_str or start_month_str}.csv'
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        # เขียน UTF-8 BOM (U+FEFF) ที่ต้นไฟล์ให้ Excel อ่านภาษาไทยได้
+        response.write('\ufeff')
 
         writer = csv.writer(response)
+        # Header columns ตาม spec
         writer.writerow([
-            'Invoice', 'Month', 'Room', 'Building', 'Tenant',
-            'Base Rent', 'Elec (Used)', 'Elec (Amt)', 'Water (Used)', 'Water (Amt)',
-            'Others', 'Total', 'Status', 'Due Date'
+            'Invoice No', 'Room', 'Tenant Name', 'Month',
+            'Base Rent', 'Water Units', 'Water Amt', 'Elec Units', 'Elec Amt',
+            'Total', 'Status', 'Paid Date',
         ])
 
         for b in bills:
-            # Try to get active tenant via Lease
-            from apps.tenants.models import TenantProfile
-            tenant = "N/A"
-            active_lease = b.room.leases.filter(status='active').first()
-            if active_lease:
-                tenant = active_lease.tenant.full_name
-            elif b.room.tenant_profiles.exists():
-                tenant = b.room.tenant_profiles.first().full_name
+            # หา tenant name จาก active lease ก่อน ถ้าไม่มีดูจาก tenant_profiles
+            # ใช้ to_attr cache ที่ prefetch มาแล้ว — ไม่ hit DB อีก (แก้ N+1 query)
+            tenant_name = ''
+            active_leases = getattr(b.room, 'active_leases_cache', None)
+            if active_leases:
+                tenant_name = active_leases[0].tenant.full_name
+            else:
+                profiles = getattr(b.room, 'tenant_profiles_cache', None)
+                if profiles:
+                    tenant_name = profiles[0].full_name
+
+            # วันที่ชำระเงิน — ดูจาก Payment ที่ link กับ bill นี้
+            paid_date = ''
+            payment = getattr(b, 'payment', None)
+            if payment and payment.paid_at:
+                paid_date = payment.paid_at.strftime('%Y-%m-%d')
 
             writer.writerow([
-                b.invoice_number,
-                b.month.strftime('%Y-%m') if b.month else '',
+                b.invoice_number or '',
                 b.room.number,
-                b.room.floor.building.name,
-                tenant,
+                tenant_name,
+                b.month.strftime('%Y-%m') if b.month else '',
                 b.base_rent,
-                b.elec_curr - (b.elec_prev or 0),
-                b.elec_amt,
-                b.water_curr - (b.water_prev or 0),
+                b.water_units,
                 b.water_amt,
-                b.other_amt,
+                b.elec_units,
+                b.elec_amt,
                 b.total,
                 b.get_status_display(),
-                b.due_date.strftime('%Y-%m-%d') if b.due_date else ''
+                paid_date,
             ])
 
         return response

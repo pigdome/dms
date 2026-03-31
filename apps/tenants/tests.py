@@ -237,10 +237,201 @@ class TenantImportViewTests(TestCase):
         self.assertRedirects(resp, reverse('tenants:import'), fetch_redirect_response=False)
 
     def test_tenant_cannot_access_import(self):
+        # StaffRequiredMixin คืน 403 PermissionDenied สำหรับ tenant — ไม่ redirect
         from apps.core.models import CustomUser
         tenant = CustomUser.objects.create_user(
             'import_tenant', password='pass', role='tenant', dormitory=self.dorm
         )
         self.client.force_login(tenant)
         resp = self.client.get(reverse('tenants:import'))
-        self.assertRedirects(resp, reverse('tenant:home'), fetch_redirect_response=False)
+        self.assertEqual(resp.status_code, 403)
+
+
+# ---------------------------------------------------------------------------
+# TenantDetailView — IDOR protection tests
+# ---------------------------------------------------------------------------
+
+class TenantDetailViewIDORTests(TestCase):
+    """ตรวจสอบว่า TenantDetailView ป้องกัน IDOR ได้ถูกต้อง
+
+    - tenant ที่เข้าถึง pk ของ tenant อื่นต้องถูก redirect กลับ profile ตัวเอง
+    - tenant ที่พยายามเข้า view ที่ต้องการสิทธิ์ staff/owner ต้องได้รับ 403
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.dorm = Dormitory.objects.create(name='IDOR Dorm', address='Addr')
+
+        # สร้าง room สองห้องสำหรับ tenant สองคน
+        cls.room_a = _make_room(cls.dorm, 'A01')
+        cls.room_b = _make_room(cls.dorm, 'B01')
+
+        # tenant A
+        cls.tenant_a = _make_tenant('idor_tenant_a', cls.dorm, room=cls.room_a)
+        # tenant B
+        cls.tenant_b = _make_tenant('idor_tenant_b', cls.dorm, room=cls.room_b)
+
+        # owner ของ dorm เดียวกัน
+        cls.owner = CustomUser.objects.create_user(
+            'idor_owner', password='pass', role='owner', dormitory=cls.dorm
+        )
+
+    def test_tenant_a_accessing_tenant_b_profile_redirects_to_own_profile(self):
+        """tenant A เรียก URL ของ tenant B → ต้อง redirect กลับ profile ของ tenant A เอง
+        (ไม่ใช่ 403 เพราะ view เลือก redirect แทนเพื่อ UX ที่ดีกว่า)
+        """
+        self.client.force_login(self.tenant_a.user)
+        url = reverse('tenants:detail', kwargs={'pk': self.tenant_b.pk})
+        resp = self.client.get(url)
+
+        # ต้อง redirect ไปยัง profile ของ tenant A เอง ไม่ใช่ profile ของ tenant B
+        expected_url = reverse('tenants:detail', kwargs={'pk': self.tenant_a.pk})
+        self.assertRedirects(resp, expected_url, fetch_redirect_response=False)
+
+    def test_tenant_cannot_access_tenant_list_view(self):
+        """tenant user เข้า TenantListView ซึ่งป้องกันด้วย StaffRequiredMixin → ต้อง 403"""
+        self.client.force_login(self.tenant_a.user)
+        resp = self.client.get(reverse('tenants:list'))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_owner_can_access_any_profile_in_own_dorm(self):
+        """owner เข้า profile ของ tenant ในหอตัวเองได้ปกติ — ไม่ถูก redirect"""
+        self.client.force_login(self.owner)
+        url = reverse('tenants:detail', kwargs={'pk': self.tenant_a.pk})
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+
+
+# ---------------------------------------------------------------------------
+# AnonymizeTenantView tests — Task 3.2: PDPA Right to be Forgotten
+# ---------------------------------------------------------------------------
+
+class AnonymizeTenantModelTests(TestCase):
+    """ทดสอบ TenantProfile.anonymize() method โดยตรง"""
+
+    def setUp(self):
+        self.dorm = Dormitory.objects.create(name='Anon Dorm', address='Addr')
+        self.room = _make_room(self.dorm, '101')
+        self.tenant = _make_tenant('anon_tenant', self.dorm, room=self.room)
+        # ใส่ข้อมูลส่วนบุคคลก่อนทดสอบ
+        with dormitory_context(self.dorm):
+            self.tenant.phone = '0812345678'
+            self.tenant.line_id = 'line_test_id'
+            self.tenant.id_card_no = '1234567890123'
+            self.tenant.save()
+
+    def test_anonymize_clears_personal_data(self):
+        """anonymize() ต้องล้าง phone, line_id และ set id_card_no = '[REDACTED]'"""
+        from apps.core.models import ActivityLog
+        self.tenant.anonymize()
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.phone, '')
+        self.assertEqual(self.tenant.line_id, '')
+        self.assertEqual(self.tenant.id_card_no, '[REDACTED]')
+
+    def test_anonymize_sets_is_deleted_and_timestamps(self):
+        """anonymize() ต้อง set is_deleted=True, deleted_at และ anonymized_at"""
+        self.tenant.anonymize()
+        self.tenant.refresh_from_db()
+        self.assertTrue(self.tenant.is_deleted)
+        self.assertIsNotNone(self.tenant.deleted_at)
+        self.assertIsNotNone(self.tenant.anonymized_at)
+
+    def test_anonymize_logs_to_activity_log(self):
+        """anonymize() ต้องสร้าง ActivityLog entry ที่มี action='pdpa_anonymize'"""
+        from apps.core.models import ActivityLog
+        owner = CustomUser.objects.create_user(
+            'anon_owner_log', password='pass', role='owner', dormitory=self.dorm
+        )
+        self.tenant.anonymize(performed_by=owner)
+        log = ActivityLog.objects.filter(action='pdpa_anonymize').first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.user, owner)
+        self.assertEqual(str(log.detail.get('record_id')), str(self.tenant.pk))
+
+
+class AnonymizeTenantViewTests(TestCase):
+    """ทดสอบ POST /tenants/<pk>/anonymize/ endpoint"""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.dorm = Dormitory.objects.create(name='Anon View Dorm', address='Addr')
+        cls.room = _make_room(cls.dorm, '201')
+
+        cls.owner = CustomUser.objects.create_user(
+            'anon_view_owner', password='pass', role='owner', dormitory=cls.dorm
+        )
+
+        # Dormitory B สำหรับทดสอบ IDOR
+        cls.dorm_b = Dormitory.objects.create(name='Anon Dorm B', address='B')
+        cls.owner_b = CustomUser.objects.create_user(
+            'anon_owner_b', password='pass', role='owner', dormitory=cls.dorm_b
+        )
+
+    def setUp(self):
+        # สร้าง tenant ใหม่ในแต่ละ test เพราะ anonymize เป็น irreversible
+        with dormitory_context(self.dorm):
+            user = CustomUser.objects.create_user(
+                f'anon_t_{self._testMethodName}', password='pass',
+                role='tenant', dormitory=self.dorm
+            )
+            self.tenant = TenantProfile.objects.create(
+                user=user, room=self.room, phone='099', line_id='lid'
+            )
+
+    def _url(self, pk=None):
+        return reverse('tenants:anonymize', kwargs={'pk': pk or self.tenant.pk})
+
+    def test_post_with_confirm_anonymizes_tenant(self):
+        """POST confirm=true → tenant data ถูก anonymize"""
+        self.client.force_login(self.owner)
+        resp = self.client.post(self._url(), {'confirm': 'true'})
+        self.assertRedirects(resp, reverse('tenants:list'), fetch_redirect_response=False)
+        self.tenant.refresh_from_db()
+        self.assertTrue(self.tenant.is_deleted)
+        self.assertEqual(self.tenant.phone, '')
+
+    def test_post_without_confirm_returns_400(self):
+        """POST ไม่มี confirm → 400 Bad Request"""
+        self.client.force_login(self.owner)
+        resp = self.client.post(self._url(), {})
+        self.assertEqual(resp.status_code, 400)
+        # ข้อมูลต้องไม่ถูกลบ
+        self.tenant.refresh_from_db()
+        self.assertFalse(self.tenant.is_deleted)
+
+    def test_post_with_wrong_confirm_value_returns_400(self):
+        """POST confirm=yes (ไม่ใช่ 'true') → 400"""
+        self.client.force_login(self.owner)
+        resp = self.client.post(self._url(), {'confirm': 'yes'})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_cannot_anonymize_tenant_from_other_dorm(self):
+        """IDOR protection: owner B ต้องไม่สามารถ anonymize tenant ของ owner A → 404"""
+        self.client.force_login(self.owner_b)
+        resp = self.client.post(self._url(), {'confirm': 'true'})
+        self.assertEqual(resp.status_code, 404)
+        # ข้อมูลต้องไม่ถูกลบ
+        self.tenant.refresh_from_db()
+        self.assertFalse(self.tenant.is_deleted)
+
+    def test_staff_cannot_anonymize(self):
+        """staff ไม่มีสิทธิ์ anonymize (OwnerRequiredMixin) → 403"""
+        staff = CustomUser.objects.create_user(
+            'anon_staff', password='pass', role='staff', dormitory=self.dorm
+        )
+        self.client.force_login(staff)
+        resp = self.client.post(self._url(), {'confirm': 'true'})
+        self.assertEqual(resp.status_code, 403)
+
+    def test_unauthenticated_redirected_to_login(self):
+        """anonymous user → redirect to login"""
+        resp = self.client.post(self._url(), {'confirm': 'true'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/login/', resp['Location'])
+
+    def test_get_returns_confirm_page(self):
+        """GET /anonymize/ → แสดง confirm dialog (200)"""
+        self.client.force_login(self.owner)
+        resp = self.client.get(self._url())
+        self.assertEqual(resp.status_code, 200)

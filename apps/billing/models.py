@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.db import models, transaction
 from apps.core.models import Dormitory, TenantModelMixin, UUIDEncoder
+from apps.core.mixins import AuditMixin
 from apps.rooms.models import Room
 
 
@@ -20,6 +21,22 @@ class BillingSettings(TenantModelMixin):
     tmr_api_key = models.CharField(max_length=255, blank=True)
     tmr_secret = models.CharField(max_length=255, blank=True)
     dunning_enabled = models.BooleanField(default=True)
+
+    # SMS notification channel settings
+    class NotificationChannel(models.TextChoices):
+        LINE_ONLY = 'line_only', 'LINE Only'
+        SMS_ONLY = 'sms_only', 'SMS Only'
+        BOTH = 'both', 'LINE + SMS'
+
+    notification_channel = models.CharField(
+        max_length=20,
+        choices=NotificationChannel.choices,
+        default=NotificationChannel.LINE_ONLY,
+    )
+    sms_enabled = models.BooleanField(default=False)
+    sms_api_key = models.CharField(max_length=255, blank=True)
+    # Sender ID ที่แสดงบนมือถือผู้รับ — จำกัด 11 ตัวอักษรตามมาตรฐาน GSM
+    sms_sender_name = models.CharField(max_length=11, blank=True)
 
     def __str__(self):
         return f'Billing Settings - {self.dormitory.name if self.dormitory_id else "No Dorm"}'
@@ -43,7 +60,7 @@ class ExtraChargeType(TenantModelMixin):
         return self.name
 
 
-class Bill(TenantModelMixin):
+class Bill(AuditMixin, TenantModelMixin):
     class Status(models.TextChoices):
         DRAFT = 'draft', 'Draft'
         SENT = 'sent', 'Sent'
@@ -158,7 +175,7 @@ class BillLineItem(TenantModelMixin):
         super().save(*args, **kwargs)
 
 
-class Payment(TenantModelMixin):
+class Payment(AuditMixin, TenantModelMixin):
     bill = models.OneToOneField(Bill, on_delete=models.CASCADE, related_name='payment')
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     tmr_ref = models.CharField(max_length=255, unique=True)

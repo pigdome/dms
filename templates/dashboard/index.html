@@ -45,6 +45,12 @@
           <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Revenue" %}</p>
         </div>
         <p class="text-xl font-bold">฿{{ total_income|floatformat:0 }}</p>
+        {% if income_trend is not None %}
+        <p class="text-[10px] mt-1 font-semibold {% if income_trend >= 0 %}text-emerald-500{% else %}text-rose-500{% endif %}">
+          {% if income_trend >= 0 %}<i class="fa-solid fa-arrow-trend-up"></i> +{{ income_trend }}%{% else %}<i class="fa-solid fa-arrow-trend-down"></i> {{ income_trend }}%{% endif %}
+          <span class="text-slate-400 font-normal">{% trans "vs last month" %}</span>
+        </p>
+        {% endif %}
       </div>
 
       <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
@@ -53,26 +59,30 @@
           <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Overdue" %}</p>
         </div>
         <p class="text-xl font-bold">{{ overdue_count }}</p>
+        {% if overdue_amount %}
+        <p class="text-[10px] text-rose-500 font-semibold">฿{{ overdue_amount|floatformat:0 }}</p>
+        {% else %}
         <p class="text-[10px] text-slate-400">{% trans "rooms" %}</p>
+        {% endif %}
       </div>
 
-      <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
+      <a href="{% url 'rooms:list' %}" class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm block hover:border-indigo-300 transition-colors">
         <div class="flex items-center gap-2 mb-2">
           <i class="fa-solid fa-door-open text-indigo-500"></i>
           <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Vacant" %}</p>
         </div>
         <p class="text-xl font-bold">{{ vacant_count }}</p>
         <p class="text-[10px] text-slate-400">{% trans "rooms" %}</p>
-      </div>
+      </a>
 
-      <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
+      <a href="{% url 'maintenance:list' %}" class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm block hover:border-rose-300 transition-colors">
         <div class="flex items-center gap-2 mb-2">
           <i class="fa-solid fa-screwdriver-wrench text-rose-500"></i>
           <p class="text-xs font-semibold uppercase tracking-tight text-slate-500">{% trans "Tickets" %}</p>
         </div>
         <p class="text-xl font-bold">{{ pending_maintenance }}</p>
         <p class="text-[10px] text-slate-400">{% trans "open" %}</p>
-      </div>
+      </a>
 
     </div>
   </section>
@@ -96,7 +106,10 @@
         <span class="text-[11px] font-bold text-center leading-tight">{% trans "Parcels" %}</span>
       </a>
       <a href="{% url 'maintenance:list' %}"
-         class="flex flex-col items-center gap-2 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 active:scale-95 transition-transform">
+         class="relative flex flex-col items-center gap-2 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 active:scale-95 transition-transform">
+        {% if pending_maintenance %}
+        <span class="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">{{ pending_maintenance }}</span>
+        {% endif %}
         <div class="w-12 h-12 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center">
           <i class="fa-solid fa-screwdriver-wrench text-2xl"></i>
         </div>
@@ -114,7 +127,10 @@
 
   <!-- Recent activity -->
   <section class="pb-2">
-    <h2 class="text-base font-bold text-slate-800 mb-3">{% trans "Recent Activity" %}</h2>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-base font-bold text-slate-800 dark:text-slate-100">{% trans "Recent Activity" %}</h2>
+      <a href="{% url 'dashboard:index' %}" class="text-xs text-primary font-semibold">{% trans "View all" %} →</a>
+    </div>
     {% if recent_activity %}
     <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
       {% for log in recent_activity %}

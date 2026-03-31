@@ -1,8 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(*)",
-      "Read(//etc/postgresql/16/main/**)"
+      "Bash(*)"
     ]
   }
 }
