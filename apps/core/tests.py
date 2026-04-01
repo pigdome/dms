@@ -534,8 +534,8 @@ class ImportRoomsViewTests(_ImportFixture, TestCase):
         self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
         self.assertIn('import_rooms_preview', self.client.session)
 
-    def test_upload_missing_column_shows_error(self):
-        """ถ้า header ไม่ครบ ต้องแสดง error."""
+    def test_upload_missing_column_shows_fatal_error(self):
+        """ถ้า header ไม่ครบ ต้องแสดง fatal_error — ไม่มี preview rows."""
         from django.core.files.uploadedfile import SimpleUploadedFile
         # ไม่มี column 'status'
         xlsx_bytes = _make_rooms_xlsx(
@@ -546,23 +546,24 @@ class ImportRoomsViewTests(_ImportFixture, TestCase):
                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         resp = self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
         self.assertEqual(resp.status_code, 200)
-        self.assertIsNotNone(resp.context.get('errors'))
+        self.assertIsNotNone(resp.context.get('fatal_error'))
         self.assertIsNone(resp.context.get('preview_rows'))
 
-    def test_upload_invalid_status_shows_error(self):
-        """status ที่ไม่ valid ต้องแสดง error พร้อม row number."""
+    def test_upload_invalid_status_shows_error_row(self):
+        """status ที่ไม่ valid ต้องปรากฏใน error_rows พร้อม row_num."""
         from django.core.files.uploadedfile import SimpleUploadedFile
         xlsx_bytes = _make_rooms_xlsx([('Building A', 1, '101', 'Standard', 5000, 'unknown_status')])
         f = SimpleUploadedFile('rooms.xlsx', xlsx_bytes.read(),
                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         resp = self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
-        errors = resp.context.get('errors', [])
-        self.assertTrue(len(errors) > 0)
-        # error ต้องระบุ row number
-        self.assertTrue(any('Row 2' in e for e in errors))
+        error_rows = resp.context.get('error_rows', [])
+        self.assertTrue(len(error_rows) > 0, 'ต้องมี error_rows')
+        # error row ต้องระบุ row_num และ error message
+        self.assertEqual(error_rows[0]['row_num'], 2)
+        self.assertIn('invalid', error_rows[0]['error'])
 
-    def test_upload_duplicate_room_in_file_shows_error(self):
-        """duplicate entry ภายในไฟล์เดียวกัน ต้องแสดง error."""
+    def test_upload_duplicate_room_in_file_shows_error_row(self):
+        """duplicate entry ภายในไฟล์เดียวกัน ต้องปรากฏใน error_rows."""
         from django.core.files.uploadedfile import SimpleUploadedFile
         xlsx_bytes = _make_rooms_xlsx([
             ('Building A', 1, '101', 'Standard', 5000, 'vacant'),
@@ -571,11 +572,13 @@ class ImportRoomsViewTests(_ImportFixture, TestCase):
         f = SimpleUploadedFile('rooms.xlsx', xlsx_bytes.read(),
                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         resp = self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
-        errors = resp.context.get('errors', [])
-        self.assertTrue(len(errors) > 0)
+        error_rows = resp.context.get('error_rows', [])
+        self.assertTrue(len(error_rows) > 0, 'ต้องมี error_rows สำหรับแถวซ้ำ')
+        # แถวแรกต้อง valid (row 2) แถวที่สองซ้ำ (row 3) ต้องเป็น error
+        self.assertEqual(error_rows[0]['row_num'], 3)
 
-    def test_upload_room_already_in_db_shows_error(self):
-        """ห้องที่มีอยู่แล้วใน DB ต้องแสดง error (ไม่ซ้ำ)."""
+    def test_upload_room_already_in_db_shows_error_row(self):
+        """ห้องที่มีอยู่แล้วใน DB ต้องปรากฏใน error_rows."""
         from django.core.files.uploadedfile import SimpleUploadedFile
         from apps.rooms.models import Building, Floor, Room
         # สร้างห้องก่อน
@@ -587,19 +590,19 @@ class ImportRoomsViewTests(_ImportFixture, TestCase):
         f = SimpleUploadedFile('rooms.xlsx', xlsx_bytes.read(),
                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         resp = self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
-        errors = resp.context.get('errors', [])
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any('already exists' in e for e in errors))
+        error_rows = resp.context.get('error_rows', [])
+        self.assertTrue(len(error_rows) > 0, 'ต้องมี error_rows สำหรับห้องที่ซ้ำกับ DB')
+        self.assertIn('already exists', error_rows[0]['error'])
 
-    def test_upload_invalid_floor_number_shows_error(self):
-        """floor_number ที่ไม่ใช่ตัวเลข ต้องแสดง error."""
+    def test_upload_invalid_floor_number_shows_error_row(self):
+        """floor_number ที่ไม่ใช่ตัวเลข ต้องปรากฏใน error_rows."""
         from django.core.files.uploadedfile import SimpleUploadedFile
         xlsx_bytes = _make_rooms_xlsx([('Building A', 'ABC', '101', 'Standard', 5000, 'vacant')])
         f = SimpleUploadedFile('rooms.xlsx', xlsx_bytes.read(),
                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         resp = self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
-        errors = resp.context.get('errors', [])
-        self.assertTrue(len(errors) > 0)
+        error_rows = resp.context.get('error_rows', [])
+        self.assertTrue(len(error_rows) > 0, 'ต้องมี error_rows สำหรับ floor_number ที่ไม่ถูกต้อง')
 
     # --- Confirm import ---
 
@@ -663,6 +666,54 @@ class ImportRoomsViewTests(_ImportFixture, TestCase):
             Room.unscoped_objects.filter(dormitory=self.dorm, number='101').exists()
         )
 
+    def test_confirm_rejects_when_active_dormitory_changed(self):
+        """
+        ถ้า user เปลี่ยน active dormitory หลัง upload แต่ก่อน confirm
+        ระบบต้องปฏิเสธ confirm และ redirect กลับ — ป้องกัน cross-tab dormitory leak
+        """
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from apps.rooms.models import Room
+
+        # ให้ owner มีสิทธิ์ใน dorm2 ด้วย เพื่อให้ middleware resolve dorm2 ได้
+        UserDormitoryRole.objects.get_or_create(
+            user=self.owner, dormitory=self.dorm2,
+            defaults={'role': 'owner', 'is_primary': False},
+        )
+
+        # Step 1: upload ด้วย dorm1 (active dormitory = dorm1)
+        xlsx_bytes = _make_rooms_xlsx([('Building CrossTab', 1, 'X01', 'Standard', 5000, 'vacant')])
+        f = SimpleUploadedFile('rooms.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
+
+        # Step 2: เปลี่ยน active dormitory เป็น dorm2 ใน session (จำลอง cross-tab switch)
+        session = self.client.session
+        session['active_dormitory_id'] = str(self.dorm2.pk)
+        session.save()
+
+        # Step 3: confirm — ต้องถูก reject เพราะ dormitory ไม่ตรงกับ payload
+        before = Room.unscoped_objects.filter(number='X01').count()
+        resp = self.client.post('/import/rooms/', {'action': 'confirm'})
+        after = Room.unscoped_objects.filter(number='X01').count()
+
+        self.assertEqual(resp.status_code, 302)
+        # ห้องต้องไม่ถูกสร้าง
+        self.assertEqual(before, after)
+        # session ต้องถูกล้าง
+        self.assertNotIn('import_rooms_preview', self.client.session)
+
+    def test_session_payload_includes_dormitory_id(self):
+        """session payload ต้องมี dormitory_id เพื่อใช้ตรวจสอบใน confirm step."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        xlsx_bytes = _make_rooms_xlsx([('Building A', 1, '501', 'Standard', 5000, 'vacant')])
+        f = SimpleUploadedFile('rooms.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
+        payload = self.client.session.get('import_rooms_preview', {})
+        self.assertIn('dormitory_id', payload)
+        self.assertEqual(payload['dormitory_id'], str(self.dorm.pk))
+        self.assertIn('rows', payload)
+
 
 class ImportTenantsViewTests(_ImportFixture, TestCase):
     """ทดสอบ Import Tenants view."""
@@ -722,8 +773,8 @@ class ImportTenantsViewTests(_ImportFixture, TestCase):
         self.assertIsNotNone(resp.context.get('preview_rows'))
         self.assertEqual(len(resp.context['preview_rows']), 1)
 
-    def test_upload_invalid_date_format_shows_error(self):
-        """start_date ที่ format ผิด ต้องแสดง error พร้อม row number."""
+    def test_upload_invalid_date_format_shows_error_row(self):
+        """start_date ที่ format ผิด ต้องปรากฏใน error_rows พร้อม row_num."""
         from django.core.files.uploadedfile import SimpleUploadedFile
         xlsx_bytes = _make_tenants_xlsx([
             ('101', 'Building A', 'สมชาย', 'ใจดี', '0891234567', 'somchai2@test.com', '', 'not-a-date'),
@@ -731,12 +782,13 @@ class ImportTenantsViewTests(_ImportFixture, TestCase):
         f = SimpleUploadedFile('tenants.xlsx', xlsx_bytes.read(),
                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         resp = self.client.post('/import/tenants/', {'action': 'upload', 'excel_file': f})
-        errors = resp.context.get('errors', [])
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any('Row 2' in e for e in errors))
+        error_rows = resp.context.get('error_rows', [])
+        self.assertTrue(len(error_rows) > 0, 'ต้องมี error_rows สำหรับ start_date ที่ไม่ถูกต้อง')
+        self.assertEqual(error_rows[0]['row_num'], 2)
+        self.assertIn('invalid', error_rows[0]['error'])
 
-    def test_upload_room_not_in_dormitory_shows_error(self):
-        """room ที่ไม่มีใน dormitory ต้องแสดง error."""
+    def test_upload_room_not_in_dormitory_shows_error_row(self):
+        """room ที่ไม่มีใน dormitory ต้องปรากฏใน error_rows."""
         from django.core.files.uploadedfile import SimpleUploadedFile
         xlsx_bytes = _make_tenants_xlsx([
             ('999', 'Building A', 'สมชาย', 'ใจดี', '', 'somchai3@test.com', '', '2026-01-01'),
@@ -744,12 +796,12 @@ class ImportTenantsViewTests(_ImportFixture, TestCase):
         f = SimpleUploadedFile('tenants.xlsx', xlsx_bytes.read(),
                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         resp = self.client.post('/import/tenants/', {'action': 'upload', 'excel_file': f})
-        errors = resp.context.get('errors', [])
-        self.assertTrue(len(errors) > 0)
-        self.assertTrue(any('not found' in e for e in errors))
+        error_rows = resp.context.get('error_rows', [])
+        self.assertTrue(len(error_rows) > 0, 'ต้องมี error_rows สำหรับ room ที่ไม่มีใน dormitory')
+        self.assertIn('not found', error_rows[0]['error'])
 
-    def test_upload_missing_columns_shows_error(self):
-        """ถ้า header ไม่ครบ ต้องแสดง error."""
+    def test_upload_missing_columns_shows_fatal_error(self):
+        """ถ้า header ไม่ครบ ต้องแสดง fatal_error."""
         from django.core.files.uploadedfile import SimpleUploadedFile
         xlsx_bytes = _make_tenants_xlsx(
             [('101', 'Building A', 'สมชาย', 'ใจดี')],
@@ -758,8 +810,7 @@ class ImportTenantsViewTests(_ImportFixture, TestCase):
         f = SimpleUploadedFile('tenants.xlsx', xlsx_bytes.read(),
                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         resp = self.client.post('/import/tenants/', {'action': 'upload', 'excel_file': f})
-        errors = resp.context.get('errors', [])
-        self.assertTrue(len(errors) > 0)
+        self.assertIsNotNone(resp.context.get('fatal_error'), 'ต้องมี fatal_error เมื่อ header ไม่ครบ')
 
     def test_confirm_creates_user_and_profile_and_lease(self):
         """POST action=confirm ต้องสร้าง CustomUser + TenantProfile + Lease."""
@@ -827,11 +878,280 @@ class ImportTenantsViewTests(_ImportFixture, TestCase):
                                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         # Session ของ dorm1 — Building X ไม่มีใน dorm1
         resp = self.client.post('/import/tenants/', {'action': 'upload', 'excel_file': f})
-        errors = resp.context.get('errors', [])
-        # ต้องมี error เพราะ Building X ไม่ได้อยู่ใน dorm1
-        self.assertTrue(len(errors) > 0, 'ต้องมี error ถ้า room ไม่ได้อยู่ใน dormitory นี้')
+        error_rows = resp.context.get('error_rows', [])
+        # ต้องมี error_rows เพราะ Building X ไม่ได้อยู่ใน dorm1
+        self.assertTrue(len(error_rows) > 0, 'ต้องมี error_rows ถ้า room ไม่ได้อยู่ใน dormitory นี้')
 
         # ตรวจว่าไม่มี TenantProfile ถูกสร้างสำหรับ dorm2
         self.assertFalse(
             TenantProfile.unscoped_objects.filter(dormitory=self.dorm2, user__first_name='ผิดDorm').exists()
         )
+
+    def test_confirm_rejects_when_active_dormitory_changed(self):
+        """
+        ถ้า user เปลี่ยน active dormitory หลัง upload แต่ก่อน confirm
+        ระบบต้องปฏิเสธ confirm และ redirect กลับ — ป้องกัน cross-tab dormitory leak
+        """
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from apps.core.models import CustomUser
+
+        # ให้ owner มีสิทธิ์ใน dorm2 ด้วย เพื่อให้ middleware resolve dorm2 ได้
+        UserDormitoryRole.objects.get_or_create(
+            user=self.owner, dormitory=self.dorm2,
+            defaults={'role': 'owner', 'is_primary': False},
+        )
+
+        # Step 1: upload ด้วย dorm1 (active dormitory = dorm1)
+        xlsx_bytes = _make_tenants_xlsx([
+            ('101', 'Building A', 'CrossTab', 'Tenant', '0891111111', 'crosstab@test.com', '', '2026-03-01'),
+        ])
+        f = SimpleUploadedFile('tenants.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.client.post('/import/tenants/', {'action': 'upload', 'excel_file': f})
+
+        # Step 2: เปลี่ยน active dormitory เป็น dorm2 ใน session (จำลอง cross-tab switch)
+        session = self.client.session
+        session['active_dormitory_id'] = str(self.dorm2.pk)
+        session.save()
+
+        # Step 3: confirm — ต้องถูก reject เพราะ dormitory ไม่ตรงกับ payload
+        resp = self.client.post('/import/tenants/', {'action': 'confirm'})
+
+        self.assertEqual(resp.status_code, 302)
+        # ผู้เช่าต้องไม่ถูกสร้าง
+        self.assertFalse(CustomUser.objects.filter(first_name='CrossTab').exists())
+        # session ต้องถูกล้าง
+        self.assertNotIn('import_tenants_preview', self.client.session)
+
+    def test_session_payload_includes_dormitory_id(self):
+        """session payload ต้องมี dormitory_id เพื่อใช้ตรวจสอบใน confirm step."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        xlsx_bytes = _make_tenants_xlsx([
+            ('101', 'Building A', 'PayloadCheck', 'Tenant', '', 'payloadcheck@test.com', '', '2026-03-01'),
+        ])
+        f = SimpleUploadedFile('tenants.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.client.post('/import/tenants/', {'action': 'upload', 'excel_file': f})
+        payload = self.client.session.get('import_tenants_preview', {})
+        self.assertIn('dormitory_id', payload)
+        self.assertEqual(payload['dormitory_id'], str(self.dorm.pk))
+        self.assertIn('rows', payload)
+
+
+# ---------------------------------------------------------------------------
+# Preview Import Flow — Partial Validation Tests
+# เทสสำหรับ 2-step flow ใหม่: valid + error rows แสดงพร้อมกัน
+# ---------------------------------------------------------------------------
+
+class ImportRoomsPartialPreviewTests(_ImportFixture, TestCase):
+    """
+    ทดสอบ partial preview flow สำหรับ import rooms:
+    - ไฟล์ที่มีทั้ง valid rows และ error rows ต้องแสดงทั้งคู่
+    - session เก็บเฉพาะ valid rows
+    - preview แสดง 10 แถวแรกเท่านั้น
+    - confirm import เฉพาะ valid rows ที่อยู่ใน session
+    """
+
+    def setUp(self):
+        self.client.force_login(self.owner)
+        session = self.client.session
+        session['active_dormitory_id'] = str(self.dorm.pk)
+        session.save()
+
+    def test_mixed_file_shows_both_valid_and_error_rows(self):
+        """ไฟล์ที่มีทั้ง valid และ error rows ต้องแสดงทั้งสองในบริบทเดียวกัน."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        xlsx_bytes = _make_rooms_xlsx([
+            ('Building A', 1, '101', 'Standard', 5000, 'vacant'),     # valid
+            ('Building A', 'X', '102', 'Standard', 5000, 'vacant'),   # invalid floor
+            ('Building A', 2, '201', 'Deluxe', 7000, 'vacant'),       # valid
+        ])
+        f = SimpleUploadedFile('rooms.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp = self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
+        self.assertEqual(resp.status_code, 200)
+        # valid rows = 2, error rows = 1
+        self.assertEqual(resp.context['preview_count'], 2)
+        self.assertEqual(resp.context['error_count'], 1)
+        self.assertTrue(resp.context['has_valid'])
+        self.assertTrue(resp.context['has_errors'])
+
+    def test_mixed_file_session_stores_only_valid_rows(self):
+        """session ต้องเก็บเฉพาะ valid rows — ไม่เก็บ error rows."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        xlsx_bytes = _make_rooms_xlsx([
+            ('Building A', 1, '301', 'Standard', 5000, 'vacant'),     # valid
+            ('Building A', 'BADFLOOR', '302', 'Standard', 5000, 'vacant'),  # invalid
+        ])
+        f = SimpleUploadedFile('rooms.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
+        payload = self.client.session.get('import_rooms_preview', {})
+        # session payload ต้องเป็น dict ที่มี 'rows' key พร้อม dormitory_id
+        session_rows = payload.get('rows', [])
+        # session ต้องมีเฉพาะ 1 valid row
+        self.assertEqual(len(session_rows), 1)
+        self.assertEqual(session_rows[0]['room_number'], '301')
+
+    def test_confirm_imports_only_valid_rows_when_mixed(self):
+        """
+        เมื่อไฟล์มี mixed rows และ user กด confirm
+        ต้องสร้างเฉพาะ rooms ที่ valid เท่านั้น
+        """
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from apps.rooms.models import Room
+
+        xlsx_bytes = _make_rooms_xlsx([
+            ('Building Mix', 1, 'M01', 'Standard', 5000, 'vacant'),      # valid
+            ('Building Mix', 'BAD', 'M02', 'Standard', 5000, 'vacant'),  # invalid floor
+        ])
+        f = SimpleUploadedFile('rooms.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
+
+        before = Room.unscoped_objects.filter(dormitory=self.dorm).count()
+        resp = self.client.post('/import/rooms/', {'action': 'confirm'})
+        self.assertEqual(resp.status_code, 302)
+        after = Room.unscoped_objects.filter(dormitory=self.dorm).count()
+
+        # เพิ่ม 1 ห้องเท่านั้น (M01 เท่านั้น — M02 ไม่ถูก import)
+        self.assertEqual(after - before, 1)
+        self.assertTrue(Room.unscoped_objects.filter(dormitory=self.dorm, number='M01').exists())
+        self.assertFalse(Room.unscoped_objects.filter(dormitory=self.dorm, number='M02').exists())
+
+    def test_all_error_rows_no_valid_shows_no_preview(self):
+        """ถ้าทุก row มี error ต้องไม่มี preview_rows และ has_valid=False."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        xlsx_bytes = _make_rooms_xlsx([
+            ('Building A', 'BAD1', '401', 'Standard', 5000, 'vacant'),
+            ('Building A', 'BAD2', '402', 'Standard', 5000, 'vacant'),
+        ])
+        f = SimpleUploadedFile('rooms.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp = self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
+        self.assertEqual(resp.context['preview_count'], 0)
+        self.assertEqual(resp.context['error_count'], 2)
+        self.assertFalse(resp.context['has_valid'])
+        self.assertTrue(resp.context['has_errors'])
+
+    def test_preview_shows_at_most_10_valid_rows(self):
+        """preview ต้องแสดงไม่เกิน 10 แถว แม้ว่าจะมี valid rows มากกว่านั้น."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        # สร้าง 15 valid rows
+        rows = [('Building Big', 1, f'{500 + i:03d}', 'Standard', 5000, 'vacant') for i in range(15)]
+        xlsx_bytes = _make_rooms_xlsx(rows)
+        f = SimpleUploadedFile('rooms.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp = self.client.post('/import/rooms/', {'action': 'upload', 'excel_file': f})
+        # preview_rows ต้องมีไม่เกิน 10 แถว
+        self.assertLessEqual(len(resp.context['preview_rows']), 10)
+        # แต่ preview_count ต้องเป็น 15 (total valid)
+        self.assertEqual(resp.context['preview_count'], 15)
+
+
+class ImportTenantsPartialPreviewTests(_ImportFixture, TestCase):
+    """
+    ทดสอบ partial preview flow สำหรับ import tenants:
+    - ไฟล์ที่มีทั้ง valid rows และ error rows ต้องแสดงทั้งคู่
+    - confirm import เฉพาะ valid rows
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        from apps.rooms.models import Building, Floor, Room
+        # สร้าง 3 ห้องสำหรับทดสอบ partial import
+        cls.bldg = Building.objects.create(name='Partial Bldg', dormitory=cls.dorm)
+        cls.fl = Floor.objects.create(building=cls.bldg, number=1, dormitory=cls.dorm)
+        cls.r1 = Room.objects.create(floor=cls.fl, number='P01', dormitory=cls.dorm, status='vacant')
+        cls.r2 = Room.objects.create(floor=cls.fl, number='P02', dormitory=cls.dorm, status='vacant')
+
+    def setUp(self):
+        self.client.force_login(self.owner)
+        session = self.client.session
+        session['active_dormitory_id'] = str(self.dorm.pk)
+        session.save()
+
+    def test_mixed_file_shows_valid_and_error_rows(self):
+        """ไฟล์ที่มีทั้ง valid row และ invalid row ต้องแสดงทั้งคู่ใน context."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        xlsx_bytes = _make_tenants_xlsx([
+            ('P01', 'Partial Bldg', 'วาลี', 'ดี', '', 'valid.partial@test.com', '', '2026-03-01'),   # valid
+            ('P99', 'Partial Bldg', 'ผิด', 'ห้อง', '', 'invalid.room@test.com', '', '2026-03-01'),   # room not found
+        ])
+        f = SimpleUploadedFile('tenants.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp = self.client.post('/import/tenants/', {'action': 'upload', 'excel_file': f})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['preview_count'], 1)
+        self.assertEqual(resp.context['error_count'], 1)
+        self.assertTrue(resp.context['has_valid'])
+        self.assertTrue(resp.context['has_errors'])
+
+    def test_confirm_partial_import_creates_only_valid_tenants(self):
+        """
+        เมื่อ confirm import หลังจาก upload mixed file
+        ต้องสร้างเฉพาะ tenant ที่ valid เท่านั้น — ไม่สร้าง tenant ของ error row
+        """
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from apps.core.models import CustomUser
+        from apps.tenants.models import TenantProfile
+
+        xlsx_bytes = _make_tenants_xlsx([
+            ('P02', 'Partial Bldg', 'PartValid', 'Tenant', '', 'partvalid@test.com', '', '2026-03-15'),  # valid
+            ('NONE', 'Partial Bldg', 'BadRoom', 'Person', '', 'badroom@test.com', '', '2026-03-15'),     # error
+        ])
+        f = SimpleUploadedFile('tenants.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.client.post('/import/tenants/', {'action': 'upload', 'excel_file': f})
+
+        resp = self.client.post('/import/tenants/', {'action': 'confirm'})
+        self.assertEqual(resp.status_code, 302)
+
+        # valid tenant ต้องถูกสร้าง
+        user = CustomUser.objects.filter(first_name='PartValid').first()
+        self.assertIsNotNone(user, 'valid tenant ต้องถูกสร้าง')
+        profile = TenantProfile.unscoped_objects.filter(user=user).first()
+        self.assertIsNotNone(profile)
+
+        # error tenant ต้องไม่ถูกสร้าง
+        bad_user = CustomUser.objects.filter(first_name='BadRoom').first()
+        self.assertIsNone(bad_user, 'error tenant ต้องไม่ถูกสร้าง')
+
+    def test_session_cleared_after_partial_confirm(self):
+        """session ต้องถูกล้างหลังจาก confirm สำเร็จแม้เป็น partial import."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        xlsx_bytes = _make_tenants_xlsx([
+            ('P01', 'Partial Bldg', 'ClearTest', 'Person', '', 'cleartest@test.com', '', '2026-03-15'),
+        ])
+        f = SimpleUploadedFile('tenants.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.client.post('/import/tenants/', {'action': 'upload', 'excel_file': f})
+        self.assertIn('import_tenants_preview', self.client.session)
+
+        self.client.post('/import/tenants/', {'action': 'confirm'})
+        self.assertNotIn('import_tenants_preview', self.client.session)
+
+    def test_preview_shows_at_most_10_valid_rows(self):
+        """preview ต้องแสดงไม่เกิน 10 แถว สำหรับ tenant import ด้วย."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from apps.rooms.models import Building, Floor, Room
+
+        # สร้างห้อง 15 ห้องสำหรับทดสอบนี้
+        bldg = Building.objects.create(name='Big Bldg Tenant', dormitory=self.dorm)
+        fl = Floor.objects.create(building=bldg, number=1, dormitory=self.dorm)
+        rooms = []
+        for i in range(15):
+            r = Room.objects.create(floor=fl, number=f'T{i:02d}', dormitory=self.dorm, status='vacant')
+            rooms.append(r)
+
+        rows = [
+            (f'T{i:02d}', 'Big Bldg Tenant', f'Name{i}', 'Last', '', f'bigbldg{i}@test.com', '', '2026-03-01')
+            for i in range(15)
+        ]
+        xlsx_bytes = _make_tenants_xlsx(rows)
+        f = SimpleUploadedFile('tenants.xlsx', xlsx_bytes.read(),
+                               content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp = self.client.post('/import/tenants/', {'action': 'upload', 'excel_file': f})
+        self.assertLessEqual(len(resp.context['preview_rows']), 10)
+        self.assertEqual(resp.context['preview_count'], 15)

@@ -295,22 +295,26 @@ VALID_ROOM_STATUSES = {'occupied', 'vacant', 'cleaning', 'maintenance'}
 def _parse_room_excel(workbook, dormitory):
     """
     Parse ไฟล์ Excel สำหรับ import ห้องพัก
-    คืนค่า (rows: list[dict], errors: list[str])
-    ถ้ามี error ใดก็ตาม rows จะเป็น empty list
+    คืนค่า (valid_rows: list[dict], error_rows: list[dict])
+    - valid_rows: แถวที่ผ่าน validation ทั้งหมด พร้อม import
+    - error_rows: แถวที่มี error พร้อม error message รายแถว
+    ทั้งสองรายการ return พร้อมกันเสมอ (partial validation — ไม่ abort ทั้งหมดเมื่อมี error บางแถว)
+    ยกเว้น: ถ้า header ไม่ครบ คืน ([], [{'row_num': 0, 'error': ...}]) ทันที
     """
     from apps.rooms.models import Building, Floor, Room
 
     ws = workbook.active
     headers = [cell.value for cell in ws[1]]
 
-    # ตรวจสอบว่า header ครบถ้วน
+    # ตรวจสอบว่า header ครบถ้วน — ถ้าไม่ครบให้ abort ทันที ไม่อ่านข้อมูลต่อ
     missing_cols = [col for col in ROOM_IMPORT_COLUMNS if col not in headers]
     if missing_cols:
-        return [], [_('Missing columns: %(cols)s') % {'cols': ', '.join(missing_cols)}]
+        fatal_error = _('Missing columns: %(cols)s') % {'cols': ', '.join(missing_cols)}
+        return [], [{'row_num': 0, 'error': fatal_error}]
 
     col_idx = {col: headers.index(col) for col in ROOM_IMPORT_COLUMNS}
-    rows = []
-    errors = []
+    valid_rows = []
+    error_rows = []
 
     # ใช้ set ตรวจ duplicate ภายในไฟล์ก่อน (building, floor, room_number)
     seen_keys = set()
@@ -331,90 +335,97 @@ def _parse_room_excel(workbook, dormitory):
         base_rent_raw = get_val('base_rent')
         status = str(get_val('status') or 'vacant').strip().lower()
 
+        row_error = None  # เก็บ error message ของแถวนี้
+
         # Validate ข้อมูลที่จำเป็น
         if not building_name:
-            errors.append(_('Row %(row)s: building_name is required') % {'row': row_num})
-            continue
-        if not floor_number:
-            errors.append(_('Row %(row)s: floor_number is required') % {'row': row_num})
-            continue
-        if not room_number:
-            errors.append(_('Row %(row)s: room_number is required') % {'row': row_num})
-            continue
+            row_error = str(_('building_name is required'))
+        elif not floor_number:
+            row_error = str(_('floor_number is required'))
+        elif not room_number:
+            row_error = str(_('room_number is required'))
+        else:
+            # Validate floor_number เป็นตัวเลข
+            try:
+                floor_number = int(floor_number)
+                if floor_number < 1:
+                    raise ValueError
+            except (ValueError, TypeError):
+                row_error = str(_('floor_number must be a positive integer'))
 
-        # Validate floor_number เป็นตัวเลข
-        try:
-            floor_number = int(floor_number)
-            if floor_number < 1:
-                raise ValueError
-        except (ValueError, TypeError):
-            errors.append(_('Row %(row)s: floor_number must be a positive integer') % {'row': row_num})
-            continue
+        if row_error is None:
+            # Validate base_rent
+            try:
+                base_rent = float(base_rent_raw) if base_rent_raw is not None else 0.0
+                if base_rent < 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                row_error = str(_('base_rent must be a non-negative number'))
 
-        # Validate base_rent
-        try:
-            base_rent = float(base_rent_raw) if base_rent_raw is not None else 0.0
-            if base_rent < 0:
-                raise ValueError
-        except (ValueError, TypeError):
-            errors.append(_('Row %(row)s: base_rent must be a non-negative number') % {'row': row_num})
-            continue
+        if row_error is None:
+            # Validate status
+            if status not in VALID_ROOM_STATUSES:
+                row_error = str(
+                    _('status "%(status)s" is invalid. Valid values: %(valid)s') % {
+                        'status': status,
+                        'valid': ', '.join(sorted(VALID_ROOM_STATUSES)),
+                    }
+                )
 
-        # Validate status
-        if status not in VALID_ROOM_STATUSES:
-            errors.append(
-                _('Row %(row)s: status "%(status)s" is invalid. Valid values: %(valid)s') % {
-                    'row': row_num, 'status': status,
-                    'valid': ', '.join(sorted(VALID_ROOM_STATUSES))
-                }
-            )
-            continue
+        if row_error is None:
+            # ตรวจ duplicate ภายในไฟล์
+            key = (building_name.lower(), floor_number, room_number.lower())
+            if key in seen_keys:
+                row_error = str(
+                    _('duplicate entry (%(building)s, Floor %(floor)s, Room %(room)s) in file') % {
+                        'building': building_name,
+                        'floor': floor_number,
+                        'room': room_number,
+                    }
+                )
+            else:
+                seen_keys.add(key)
 
-        # ตรวจ duplicate ภายในไฟล์
-        key = (building_name.lower(), floor_number, room_number.lower())
-        if key in seen_keys:
-            errors.append(
-                _('Row %(row)s: duplicate entry (%(building)s, Floor %(floor)s, Room %(room)s) in file') % {
-                    'row': row_num, 'building': building_name,
-                    'floor': floor_number, 'room': room_number
-                }
-            )
-            continue
-        seen_keys.add(key)
+        if row_error is None:
+            # ตรวจ duplicate ใน DB (ห้ามซ้ำใน dormitory เดียวกัน)
+            exists = Room.unscoped_objects.filter(
+                floor__building__dormitory=dormitory,
+                floor__building__name=building_name,
+                floor__number=floor_number,
+                number=room_number,
+            ).exists()
+            if exists:
+                row_error = str(
+                    _('room already exists (%(building)s, Floor %(floor)s, Room %(room)s)') % {
+                        'building': building_name,
+                        'floor': floor_number,
+                        'room': room_number,
+                    }
+                )
 
-        # ตรวจ duplicate ใน DB (ห้ามซ้ำใน dormitory เดียวกัน)
-        exists = Room.unscoped_objects.filter(
-            floor__building__dormitory=dormitory,
-            floor__building__name=building_name,
-            floor__number=floor_number,
-            number=room_number,
-        ).exists()
-        if exists:
-            errors.append(
-                _('Row %(row)s: room already exists (%(building)s, Floor %(floor)s, Room %(room)s)') % {
-                    'row': row_num, 'building': building_name,
-                    'floor': floor_number, 'room': room_number
-                }
-            )
-            continue
+        if row_error:
+            error_rows.append({'row_num': row_num, 'error': row_error})
+        else:
+            valid_rows.append({
+                'row_num': row_num,
+                'building_name': building_name,
+                'floor_number': floor_number,
+                'room_number': room_number,
+                'room_type': room_type,
+                'base_rent': base_rent,
+                'status': status,
+            })
 
-        rows.append({
-            'row_num': row_num,
-            'building_name': building_name,
-            'floor_number': floor_number,
-            'room_number': room_number,
-            'room_type': room_type,
-            'base_rent': base_rent,
-            'status': status,
-        })
-
-    return (rows, errors) if not errors else ([], errors)
+    return valid_rows, error_rows
 
 
 def _parse_tenant_excel(workbook, dormitory):
     """
     Parse ไฟล์ Excel สำหรับ import ผู้เช่า
-    คืนค่า (rows: list[dict], errors: list[str])
+    คืนค่า (valid_rows: list[dict], error_rows: list[dict])
+    - valid_rows: แถวที่ผ่าน validation ทั้งหมด พร้อม import
+    - error_rows: แถวที่มี error พร้อม error message รายแถว
+    ทั้งสองรายการ return พร้อมกันเสมอ (partial validation)
     """
     import datetime
     from apps.rooms.models import Room
@@ -422,14 +433,15 @@ def _parse_tenant_excel(workbook, dormitory):
     ws = workbook.active
     headers = [cell.value for cell in ws[1]]
 
-    # ตรวจสอบว่า header ครบถ้วน
+    # ตรวจสอบว่า header ครบถ้วน — ถ้าไม่ครบให้ abort ทันที
     missing_cols = [col for col in TENANT_IMPORT_COLUMNS if col not in headers]
     if missing_cols:
-        return [], [_('Missing columns: %(cols)s') % {'cols': ', '.join(missing_cols)}]
+        fatal_error = _('Missing columns: %(cols)s') % {'cols': ', '.join(missing_cols)}
+        return [], [{'row_num': 0, 'error': fatal_error}]
 
     col_idx = {col: headers.index(col) for col in TENANT_IMPORT_COLUMNS}
-    rows = []
-    errors = []
+    valid_rows = []
+    error_rows = []
 
     for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         # ข้าม row ว่างทั้งหมด
@@ -449,85 +461,86 @@ def _parse_tenant_excel(workbook, dormitory):
         line_id = str(get_val('line_id') or '').strip()
         start_date_raw = get_val('start_date')
 
+        row_error = None  # เก็บ error message ของแถวนี้
+
         # Validate ข้อมูลที่จำเป็น
         if not room_number:
-            errors.append(_('Row %(row)s: room_number is required') % {'row': row_num})
-            continue
-        if not building_name:
-            errors.append(_('Row %(row)s: building_name is required') % {'row': row_num})
-            continue
-        if not first_name:
-            errors.append(_('Row %(row)s: first_name is required') % {'row': row_num})
-            continue
-        if not last_name:
-            errors.append(_('Row %(row)s: last_name is required') % {'row': row_num})
-            continue
+            row_error = str(_('room_number is required'))
+        elif not building_name:
+            row_error = str(_('building_name is required'))
+        elif not first_name:
+            row_error = str(_('first_name is required'))
+        elif not last_name:
+            row_error = str(_('last_name is required'))
 
         # Validate start_date — รับได้ทั้ง string YYYY-MM-DD และ date object จาก Excel
         start_date = None
-        if isinstance(start_date_raw, (datetime.date, datetime.datetime)):
-            start_date = start_date_raw.date() if isinstance(start_date_raw, datetime.datetime) else start_date_raw
-        elif start_date_raw:
-            try:
-                start_date = datetime.date.fromisoformat(str(start_date_raw).strip())
-            except ValueError:
-                errors.append(
-                    _('Row %(row)s: start_date "%(val)s" is invalid. Use YYYY-MM-DD format') % {
-                        'row': row_num, 'val': start_date_raw
-                    }
+        if row_error is None:
+            if isinstance(start_date_raw, (datetime.date, datetime.datetime)):
+                start_date = (
+                    start_date_raw.date()
+                    if isinstance(start_date_raw, datetime.datetime)
+                    else start_date_raw
                 )
-                continue
-        else:
-            errors.append(_('Row %(row)s: start_date is required') % {'row': row_num})
-            continue
+            elif start_date_raw:
+                try:
+                    start_date = datetime.date.fromisoformat(str(start_date_raw).strip())
+                except ValueError:
+                    row_error = str(
+                        _('start_date "%(val)s" is invalid. Use YYYY-MM-DD format') % {
+                            'val': start_date_raw
+                        }
+                    )
+            else:
+                row_error = str(_('start_date is required'))
 
         # ตรวจสอบว่า room มีอยู่ใน dormitory นี้จริง
-        try:
-            room = Room.unscoped_objects.get(
-                floor__building__dormitory=dormitory,
-                floor__building__name=building_name,
-                number=room_number,
-            )
-        except Room.DoesNotExist:
-            errors.append(
-                _('Row %(row)s: room "%(room)s" in building "%(building)s" not found in this dormitory') % {
-                    'row': row_num, 'room': room_number, 'building': building_name
-                }
-            )
-            continue
-        except Room.MultipleObjectsReturned:
-            errors.append(
-                _('Row %(row)s: multiple rooms found for "%(room)s" in building "%(building)s"') % {
-                    'row': row_num, 'room': room_number, 'building': building_name
-                }
-            )
-            continue
-
-        # Validate email ถ้ามีการกรอกมา — ตรวจ duplicate ใน DB
-        if email:
-            from apps.core.models import CustomUser
-            if CustomUser.objects.filter(email=email).exists():
-                errors.append(
-                    _('Row %(row)s: email "%(email)s" is already in use') % {
-                        'row': row_num, 'email': email
+        room = None
+        if row_error is None:
+            try:
+                room = Room.unscoped_objects.get(
+                    floor__building__dormitory=dormitory,
+                    floor__building__name=building_name,
+                    number=room_number,
+                )
+            except Room.DoesNotExist:
+                row_error = str(
+                    _('room "%(room)s" in building "%(building)s" not found in this dormitory') % {
+                        'room': room_number, 'building': building_name
                     }
                 )
-                continue
+            except Room.MultipleObjectsReturned:
+                row_error = str(
+                    _('multiple rooms found for "%(room)s" in building "%(building)s"') % {
+                        'room': room_number, 'building': building_name
+                    }
+                )
 
-        rows.append({
-            'row_num': row_num,
-            'room_number': room_number,
-            'building_name': building_name,
-            'room_id': str(room.pk),
-            'first_name': first_name,
-            'last_name': last_name,
-            'phone': phone,
-            'email': email,
-            'line_id': line_id,
-            'start_date': start_date.isoformat(),
-        })
+        # Validate email ถ้ามีการกรอกมา — ตรวจ duplicate ใน DB
+        if row_error is None and email:
+            from apps.core.models import CustomUser
+            if CustomUser.objects.filter(email=email).exists():
+                row_error = str(
+                    _('email "%(email)s" is already in use') % {'email': email}
+                )
 
-    return (rows, errors) if not errors else ([], errors)
+        if row_error:
+            error_rows.append({'row_num': row_num, 'error': row_error})
+        else:
+            valid_rows.append({
+                'row_num': row_num,
+                'room_number': room_number,
+                'building_name': building_name,
+                'room_id': str(room.pk),
+                'first_name': first_name,
+                'last_name': last_name,
+                'phone': phone,
+                'email': email,
+                'line_id': line_id,
+                'start_date': start_date.isoformat(),
+            })
+
+    return valid_rows, error_rows
 
 
 class ImportRoomsView(OwnerRequiredMixin, View):
@@ -578,7 +591,10 @@ class ImportRoomsView(OwnerRequiredMixin, View):
         return response
 
     def _handle_upload(self, request):
-        """Parse และ validate ไฟล์ Excel แล้วแสดง preview."""
+        """
+        Parse และ validate ไฟล์ Excel แล้วแสดง preview
+        แสดงทั้ง valid rows และ error rows — user เลือกเองว่าจะ import เฉพาะ valid หรือ cancel
+        """
         import openpyxl
 
         uploaded_file = request.FILES.get('excel_file')
@@ -601,38 +617,60 @@ class ImportRoomsView(OwnerRequiredMixin, View):
             messages.error(request, _('Could not read the Excel file. Please use a valid .xlsx file.'))
             return render(request, self.template_name, {})
 
-        rows, errors = _parse_room_excel(wb, dormitory)
+        valid_rows, error_rows = _parse_room_excel(wb, dormitory)
 
-        if errors:
+        # ถ้า header ไม่ครบ (fatal error) — แสดง error ทันที ไม่ show preview
+        if not valid_rows and error_rows and error_rows[0].get('row_num') == 0:
             return render(request, self.template_name, {
-                'errors': errors,
-                'preview_rows': None,
+                'fatal_error': error_rows[0]['error'],
             })
 
-        if not rows:
+        if not valid_rows and not error_rows:
             messages.warning(request, _('No data rows found in the file.'))
             return render(request, self.template_name, {})
 
-        # เก็บ preview data ไว้ใน session เพื่อ confirm ขั้นตอนถัดไป
-        request.session['import_rooms_preview'] = rows
+        # เก็บเฉพาะ valid rows ใน session สำหรับ confirm step
+        # บันทึก dormitory_id ด้วยเพื่อป้องกัน cross-tab dormitory leak
+        request.session['import_rooms_preview'] = {
+            'dormitory_id': str(dormitory.pk),
+            'rows': valid_rows,
+        }
+
+        # แสดง preview 10 แถวแรกของ valid rows เท่านั้น
         return render(request, self.template_name, {
-            'preview_rows': rows,
-            'preview_count': len(rows),
+            'preview_rows': valid_rows[:10],
+            'preview_count': len(valid_rows),
+            'error_rows': error_rows,
+            'error_count': len(error_rows),
+            'has_errors': bool(error_rows),
+            'has_valid': bool(valid_rows),
         })
 
     def _confirm_import(self, request):
         """สร้าง rooms จาก preview data ใน session (atomic transaction)."""
         from apps.rooms.models import Building, Floor, Room
 
-        rows = request.session.get('import_rooms_preview')
-        if not rows:
+        payload = request.session.get('import_rooms_preview')
+        if not payload:
             messages.error(request, _('No import data found. Please upload a file first.'))
             return redirect('core:import_rooms')
 
+        # ป้องกัน cross-tab dormitory leak:
+        # ตรวจว่า dormitory ที่ active อยู่ตรงกับ dormitory ที่ upload ไว้ใน session
         dormitory = request.active_dormitory
         if not dormitory:
             messages.error(request, _('No active dormitory found.'))
             return redirect('core:import_rooms')
+
+        if str(dormitory.pk) != payload.get('dormitory_id'):
+            messages.error(
+                request,
+                _('Active dormitory has changed since upload. Please upload the file again.')
+            )
+            del request.session['import_rooms_preview']
+            return redirect('core:import_rooms')
+
+        rows = payload['rows']
 
         try:
             with transaction.atomic():
@@ -720,7 +758,10 @@ class ImportTenantsView(OwnerRequiredMixin, View):
         return response
 
     def _handle_upload(self, request):
-        """Parse และ validate ไฟล์ Excel แล้วแสดง preview."""
+        """
+        Parse และ validate ไฟล์ Excel แล้วแสดง preview
+        แสดงทั้ง valid rows และ error rows — user เลือกเองว่าจะ import เฉพาะ valid หรือ cancel
+        """
         import openpyxl
 
         uploaded_file = request.FILES.get('excel_file')
@@ -743,23 +784,33 @@ class ImportTenantsView(OwnerRequiredMixin, View):
             messages.error(request, _('Could not read the Excel file. Please use a valid .xlsx file.'))
             return render(request, self.template_name, {})
 
-        rows, errors = _parse_tenant_excel(wb, dormitory)
+        valid_rows, error_rows = _parse_tenant_excel(wb, dormitory)
 
-        if errors:
+        # ถ้า header ไม่ครบ (fatal error) — แสดง error ทันที ไม่ show preview
+        if not valid_rows and error_rows and error_rows[0].get('row_num') == 0:
             return render(request, self.template_name, {
-                'errors': errors,
-                'preview_rows': None,
+                'fatal_error': error_rows[0]['error'],
             })
 
-        if not rows:
+        if not valid_rows and not error_rows:
             messages.warning(request, _('No data rows found in the file.'))
             return render(request, self.template_name, {})
 
-        # เก็บ preview data ไว้ใน session เพื่อ confirm ขั้นตอนถัดไป
-        request.session['import_tenants_preview'] = rows
+        # เก็บเฉพาะ valid rows ใน session สำหรับ confirm step
+        # บันทึก dormitory_id ด้วยเพื่อป้องกัน cross-tab dormitory leak
+        request.session['import_tenants_preview'] = {
+            'dormitory_id': str(dormitory.pk),
+            'rows': valid_rows,
+        }
+
+        # แสดง preview 10 แถวแรกของ valid rows เท่านั้น
         return render(request, self.template_name, {
-            'preview_rows': rows,
-            'preview_count': len(rows),
+            'preview_rows': valid_rows[:10],
+            'preview_count': len(valid_rows),
+            'error_rows': error_rows,
+            'error_count': len(error_rows),
+            'has_errors': bool(error_rows),
+            'has_valid': bool(valid_rows),
         })
 
     def _confirm_import(self, request):
@@ -772,15 +823,27 @@ class ImportTenantsView(OwnerRequiredMixin, View):
         from apps.rooms.models import Room
         from apps.tenants.models import TenantProfile, Lease
 
-        rows = request.session.get('import_tenants_preview')
-        if not rows:
+        payload = request.session.get('import_tenants_preview')
+        if not payload:
             messages.error(request, _('No import data found. Please upload a file first.'))
             return redirect('core:import_tenants')
 
+        # ป้องกัน cross-tab dormitory leak:
+        # ตรวจว่า dormitory ที่ active อยู่ตรงกับ dormitory ที่ upload ไว้ใน session
         dormitory = request.active_dormitory
         if not dormitory:
             messages.error(request, _('No active dormitory found.'))
             return redirect('core:import_tenants')
+
+        if str(dormitory.pk) != payload.get('dormitory_id'):
+            messages.error(
+                request,
+                _('Active dormitory has changed since upload. Please upload the file again.')
+            )
+            del request.session['import_tenants_preview']
+            return redirect('core:import_tenants')
+
+        rows = payload['rows']
 
         try:
             with transaction.atomic():

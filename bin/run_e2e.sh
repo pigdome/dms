@@ -4,7 +4,7 @@
 #   Default BASE_URL: http://localhost:8000
 #
 # Prerequisites:
-#   - Server is running (docker-compose up, or python manage.py runserver)
+#   - Server is running (docker compose up, or python manage.py runserver)
 #   - Seed data loaded (./bin/seed_data.sh)
 #   - Playwright installed: pip install playwright && playwright install chromium
 set -e
@@ -24,13 +24,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# ─── Parse --url flag ─────────────────────────────────────────────────────────
+# ─── Parse flags ─────────────────────────────────────────────────────────────
 BASE_URL="http://localhost:8000"
+AUTO_START=true
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --url)
             BASE_URL="$2"
             shift 2
+            ;;
+        --start-server)
+            AUTO_START=true
+            shift
             ;;
         *)
             shift
@@ -51,6 +56,13 @@ if ! python -c "import playwright" 2>/dev/null; then
     exit 1
 fi
 
+# ─── Auto-start via docker compose if requested ──────────────────────────────
+if $AUTO_START; then
+    info "Starting services via docker compose (db + redis + web)..."
+    docker compose up -d db redis web
+    trap 'info "Stopping docker compose services..."; docker compose stop web redis db' EXIT
+fi
+
 # ─── Wait for server to be ready ─────────────────────────────────────────────
 waiting "Waiting for server at $BASE_URL (or auto-detecting ports 8000, 18000)..."
 MAX_WAIT=30
@@ -67,7 +79,7 @@ until curl -sf "$BASE_URL/login/" -o /dev/null 2>/dev/null; do
 
     if [ $WAITED -ge $MAX_WAIT ]; then
         err "Server did not become ready within ${MAX_WAIT}s. Is it running?"
-        err "Hint: docker-compose up -d  OR  python manage.py runserver"
+        err "Hint: docker compose up -d  OR  python manage.py runserver"
         exit 1
     fi
     sleep 1

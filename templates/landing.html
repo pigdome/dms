@@ -4,9 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% trans "DMS - ระบบจัดการหอพัก | โปรแกรมบริหารหอพักออนไลน์" %}</title>
-    <meta name="description" content="{% trans 'DMS ระบบจัดการหอพักออนไลน์ครบวงจร คำนวณบิลอัตโนมัติ แจ้งเตือนผ่าน LINE รับชำระด้วย QR Code ติดตามงานซ่อม เหมาะสำหรับเจ้าของหอพักยุคใหม่' %}">
-    <meta name="keywords" content="ระบบจัดการหอพัก, โปรแกรมหอพัก, software บริหารหอพัก, ระบบบิลหอพัก, จดมิเตอร์หอพัก, dormitory management system, หอพักออนไลน์">
+    <title>{% trans "DMS - โปรแกรมจัดการหอพักครบวงจร | บิลอัตโนมัติ แจ้งเตือน LINE" %}</title>
+    <meta name="description" content="{% trans 'โปรแกรมจัดการหอพักครบวงจร คำนวณบิลค่าน้ำค่าไฟอัตโนมัติ แจ้งเตือนค่าเช่าผ่าน LINE 7 ขั้นตอน รับชำระ QR PromptPay รองรับหลายตึก ทดลองใช้ฟรี 30 วัน' %}">
+    <meta name="keywords" content="ระบบจัดการหอพัก, โปรแกรมหอพัก, software บริหารหอพัก, ระบบบิลหอพัก, จดมิเตอร์หอพัก, dormitory management system, หอพักออนไลน์, ระบบเก็บค่าเช่าหอพัก, จดมิเตอร์หอพัก, แจ้งเตือนค่าเช่า LINE, หอพักหลายตึก, import ผู้เช่า Excel">
     <link rel="canonical" href="/">
 
     <!-- Open Graph -->
@@ -85,12 +85,12 @@
                 </div>
                 
                 <div class="hidden md:flex items-center gap-8 font-medium">
-                    <a href="#features" class="text-slate-600 hover:text-primary transition-colors">{% trans "Features" %}</a>
-                    <a href="#how-it-works" class="text-slate-600 hover:text-primary transition-colors">{% trans "How it works" %}</a>
+                    <a href="#features" class="text-slate-600 hover:text-primary transition-colors">{% trans "ฟีเจอร์" %}</a>
+                    <a href="#how-it-works" class="text-slate-600 hover:text-primary transition-colors">{% trans "วิธีใช้งาน" %}</a>
                     <a href="#faq" class="text-slate-600 hover:text-primary transition-colors">FAQ</a>
-                    <a href="{% url 'core:login' %}" class="text-slate-600 hover:text-primary transition-colors">{% trans "Log in" %}</a>
+                    <a href="{% url 'core:login' %}" class="text-slate-600 hover:text-primary transition-colors">{% trans "เข้าสู่ระบบ" %}</a>
                     <a href="{% url 'core:login' %}" class="bg-primary text-white px-6 py-3 rounded-full hover:bg-primary/90 transition-all shadow-lg shadow-primary/25 hover:scale-105 active:scale-95">
-                        {% trans "Get Started" %}
+                        {% trans "เริ่มใช้งานฟรี" %}
                     </a>
                 </div>
 
@@ -102,11 +102,11 @@
             </div>
             <!-- Mobile Menu -->
             <div id="mobile-menu" class="hidden md:hidden border-t border-slate-100 py-4 space-y-2">
-                <a href="#features" class="block px-4 py-3 text-slate-600 hover:text-primary hover:bg-slate-50 rounded-xl font-medium transition-colors">{% trans "Features" %}</a>
-                <a href="#how-it-works" class="block px-4 py-3 text-slate-600 hover:text-primary hover:bg-slate-50 rounded-xl font-medium transition-colors">{% trans "How it works" %}</a>
+                <a href="#features" class="block px-4 py-3 text-slate-600 hover:text-primary hover:bg-slate-50 rounded-xl font-medium transition-colors">{% trans "ฟีเจอร์" %}</a>
+                <a href="#how-it-works" class="block px-4 py-3 text-slate-600 hover:text-primary hover:bg-slate-50 rounded-xl font-medium transition-colors">{% trans "วิธีใช้งาน" %}</a>
                 <a href="#faq" class="block px-4 py-3 text-slate-600 hover:text-primary hover:bg-slate-50 rounded-xl font-medium transition-colors">FAQ</a>
-                <a href="{% url 'core:login' %}" class="block px-4 py-3 text-slate-600 hover:text-primary hover:bg-slate-50 rounded-xl font-medium transition-colors">{% trans "Log in" %}</a>
-                <a href="{% url 'core:login' %}" class="block mx-4 py-3 bg-primary text-white text-center rounded-xl font-bold hover:bg-primary/90 transition-colors">{% trans "Get Started" %}</a>
+                <a href="{% url 'core:login' %}" class="block px-4 py-3 text-slate-600 hover:text-primary hover:bg-slate-50 rounded-xl font-medium transition-colors">{% trans "เข้าสู่ระบบ" %}</a>
+                <a href="{% url 'core:login' %}" class="block mx-4 py-3 bg-primary text-white text-center rounded-xl font-bold hover:bg-primary/90 transition-colors">{% trans "เริ่มใช้งานฟรี" %}</a>
             </div>
         </div>
     </nav>
@@ -120,14 +120,14 @@
                         <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
                         <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
                     </span>
-                    {% trans "Smart Dormitory System #1" %}
+                    {% trans "ทดลองใช้ฟรี 30 วัน ไม่ต้องใช้บัตรเครดิต" %}
                 </div>
                 <h1 class="text-5xl lg:text-7xl font-extrabold text-dark leading-tight">
-                    {% trans "Automate Your" %}<br>
-                    <span class="text-primary">{% trans "Dormitory Management" %}</span>
+                    {% trans "โปรแกรมจัดการหอพักครบวงจร" %}<br>
+                    <span class="text-primary">{% trans "บิลอัตโนมัติ แจ้งเตือน LINE" %}</span>
                 </h1>
                 <p class="text-xl text-slate-500 max-w-xl leading-relaxed">
-                    {% trans "ระบบจัดการหอพักที่ทันสมัยที่สุด ช่วยให้คุณจัดการบิล แจ้งพัสดุ และงานซ่อมบำรุงได้ในที่เดียว ประหยัดเวลา ลดความผิดพลาด" %}
+                    {% trans "ระบบที่เจ้าของหอพักใช้จริง ตั้งแต่หอเล็ก 10 ห้อง ถึงหอใหญ่ 500+ ห้อง จัดการได้คนเดียว ไม่ต้องมีทีม IT" %}
                 </p>
                 <div class="flex flex-wrap gap-4 pt-4">
                     <a href="{% url 'core:login' %}" class="bg-primary text-white px-8 py-4 rounded-2xl font-bold text-lg hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 flex items-center gap-3">
@@ -168,13 +168,79 @@
         </div>
     </header>
 
-    <!-- Trusted By -->
-    <section class="py-12 border-y border-slate-100 bg-surface/50">
-        <div class="max-w-7xl mx-auto px-4 flex flex-wrap justify-center gap-6 md:gap-12 lg:gap-24 opacity-50 grayscale hover:grayscale-0 transition-all text-center">
-             <div class="flex items-center gap-2 md:gap-3 font-bold text-lg md:text-2xl text-slate-400"><i class="fa-solid fa-cloud"></i> CLOUD STORAGE</div>
-             <div class="flex items-center gap-2 md:gap-3 font-bold text-lg md:text-2xl text-slate-400"><i class="fa-solid fa-bolt"></i> FAST SETUP</div>
-             <div class="flex items-center gap-2 md:gap-3 font-bold text-lg md:text-2xl text-slate-400"><i class="fa-solid fa-headset"></i> 24/7 SUPPORT</div>
-             <div class="flex items-center gap-2 md:gap-3 font-bold text-lg md:text-2xl text-slate-400"><i class="fa-solid fa-smile"></i> HAPPY TENANTS</div>
+    <!-- Stats Bar -->
+    <section class="py-12 border-y border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+        <div class="max-w-5xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+            <div class="space-y-1">
+                <p class="text-3xl font-extrabold text-primary">500+</p>
+                <p class="text-sm font-medium text-slate-600 dark:text-slate-300">{% trans "ห้อง ที่ใช้งานแล้ว" %}</p>
+            </div>
+            <div class="space-y-1">
+                <p class="text-3xl font-extrabold text-primary">7</p>
+                <p class="text-sm font-medium text-slate-600 dark:text-slate-300">{% trans "ขั้นตอน Dunning อัตโนมัติ" %}</p>
+            </div>
+            <div class="space-y-1">
+                <p class="text-3xl font-extrabold text-primary">5 นาที</p>
+                <p class="text-sm font-medium text-slate-600 dark:text-slate-300">{% trans "ติดตั้งเสร็จ" %}</p>
+            </div>
+            <div class="space-y-1">
+                <p class="text-3xl font-extrabold text-primary">0 บาท</p>
+                <p class="text-sm font-medium text-slate-600 dark:text-slate-300">{% trans "ค่าเริ่มต้น" %}</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pain Points Section -->
+    <section class="py-24 lg:py-32 bg-white dark:bg-slate-900">
+        <div class="max-w-5xl mx-auto px-4">
+            <div class="text-center max-w-3xl mx-auto mb-16 space-y-4">
+                <h2 class="text-4xl lg:text-5xl font-extrabold text-dark dark:text-white">{% trans "ปัญหาที่เจ้าของหอพักเจอทุกเดือน" %}</h2>
+                <p class="text-lg text-slate-500 dark:text-slate-400">{% trans "DMS แก้ได้ทุกปัญหา ในระบบเดียว" %}</p>
+            </div>
+            <div class="grid md:grid-cols-3 gap-8">
+                <!-- Pain Point 1 -->
+                <div class="space-y-4">
+                    <div class="p-6 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800">
+                        <p class="text-sm font-bold text-red-500 dark:text-red-400 uppercase tracking-wide mb-2">{% trans "ก่อนใช้ DMS" %}</p>
+                        <p class="text-red-700 dark:text-red-300 font-medium leading-relaxed">{% trans "จดบิลมือ บวกผิดบ่อย เสียเวลาทุกเดือน" %}</p>
+                    </div>
+                    <div class="flex justify-center text-slate-400 dark:text-slate-500 text-2xl">
+                        <i class="fa-solid fa-arrow-down"></i>
+                    </div>
+                    <div class="p-6 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800">
+                        <p class="text-sm font-bold text-emerald-500 dark:text-emerald-400 uppercase tracking-wide mb-2">{% trans "หลังใช้ DMS" %}</p>
+                        <p class="text-emerald-700 dark:text-emerald-300 font-medium leading-relaxed">{% trans "คำนวณอัตโนมัติ ไม่มีผิดพลาด ออกบิลในคลิกเดียว" %}</p>
+                    </div>
+                </div>
+                <!-- Pain Point 2 -->
+                <div class="space-y-4">
+                    <div class="p-6 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800">
+                        <p class="text-sm font-bold text-red-500 dark:text-red-400 uppercase tracking-wide mb-2">{% trans "ก่อนใช้ DMS" %}</p>
+                        <p class="text-red-700 dark:text-red-300 font-medium leading-relaxed">{% trans "วิ่งเคาะประตูเก็บเงิน ลูกบ้านหนี" %}</p>
+                    </div>
+                    <div class="flex justify-center text-slate-400 dark:text-slate-500 text-2xl">
+                        <i class="fa-solid fa-arrow-down"></i>
+                    </div>
+                    <div class="p-6 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800">
+                        <p class="text-sm font-bold text-emerald-500 dark:text-emerald-400 uppercase tracking-wide mb-2">{% trans "หลังใช้ DMS" %}</p>
+                        <p class="text-emerald-700 dark:text-emerald-300 font-medium leading-relaxed">{% trans "LINE แจ้งอัตโนมัติ 7 รอบ เงินเข้า QR PromptPay" %}</p>
+                    </div>
+                </div>
+                <!-- Pain Point 3 -->
+                <div class="space-y-4">
+                    <div class="p-6 rounded-2xl bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800">
+                        <p class="text-sm font-bold text-red-500 dark:text-red-400 uppercase tracking-wide mb-2">{% trans "ก่อนใช้ DMS" %}</p>
+                        <p class="text-red-700 dark:text-red-300 font-medium leading-relaxed">{% trans "Excel รก 3 ปี ย้ายข้อมูลไม่ได้" %}</p>
+                    </div>
+                    <div class="flex justify-center text-slate-400 dark:text-slate-500 text-2xl">
+                        <i class="fa-solid fa-arrow-down"></i>
+                    </div>
+                    <div class="p-6 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800">
+                        <p class="text-sm font-bold text-emerald-500 dark:text-emerald-400 uppercase tracking-wide mb-2">{% trans "หลังใช้ DMS" %}</p>
+                        <p class="text-emerald-700 dark:text-emerald-300 font-medium leading-relaxed">{% trans "Import Excel พร้อม preview ย้ายได้ใน 5 นาที" %}</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -182,8 +248,8 @@
     <section id="features" class="py-24 lg:py-32">
         <div class="max-w-7xl mx-auto px-4">
             <div class="text-center max-w-3xl mx-auto mb-20 space-y-4">
-                <h2 class="text-primary font-bold tracking-widest uppercase text-sm">{% trans "Our Solutions" %}</h2>
-                <h3 class="text-4xl lg:text-5xl font-extrabold text-dark">{% trans "ฟีเจอร์เด่นที่ออกแบบมาเพื่อคุณ" %}</h3>
+                <h2 class="text-primary font-bold tracking-widest uppercase text-sm">{% trans "ฟีเจอร์หลัก" %}</h2>
+                <h3 class="text-4xl lg:text-5xl font-extrabold text-dark">{% trans "ฟีเจอร์โปรแกรมจัดการหอพักที่ครบที่สุด" %}</h3>
                 <p class="text-lg text-slate-500">{% trans "จัดการทุกมิติของหอพักผ่านระบบเดียว ที่เข้าใจการทำงานจริงของเจ้าของหอพัก" %}</p>
             </div>
             
@@ -235,6 +301,54 @@
                         {% trans "Learn more" %} <i class="fa-solid fa-arrow-right text-sm"></i>
                     </a>
                 </div>
+
+                <!-- Feature 5: Audit Log -->
+                <div class="group p-8 rounded-3xl border border-slate-100 bg-white hover:border-primary/50 hover:shadow-2xl hover:shadow-primary/10 transition-all duration-300">
+                    <div class="w-16 h-16 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-primary group-hover:text-white transition-colors">
+                        <i class="fa-solid fa-clock-rotate-left text-2xl"></i>
+                    </div>
+                    <h4 class="text-xl font-bold text-dark mb-4">{% trans "Audit Log" %}</h4>
+                    <p class="text-slate-500 mb-6">{% trans "บันทึกทุก action พร้อม old→new value ทราบได้ทันทีว่าใครแก้อะไร เมื่อไหร่" %}</p>
+                    <a href="{% url 'core:login' %}" class="text-primary font-bold flex items-center gap-2 group-hover:gap-3 transition-all">
+                        {% trans "Learn more" %} <i class="fa-solid fa-arrow-right text-sm"></i>
+                    </a>
+                </div>
+
+                <!-- Feature 6: Role Management -->
+                <div class="group p-8 rounded-3xl border border-slate-100 bg-white hover:border-primary/50 hover:shadow-2xl hover:shadow-primary/10 transition-all duration-300">
+                    <div class="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-primary group-hover:text-white transition-colors">
+                        <i class="fa-solid fa-user-shield text-2xl"></i>
+                    </div>
+                    <h4 class="text-xl font-bold text-dark mb-4">{% trans "Role Management" %}</h4>
+                    <p class="text-slate-500 mb-6">{% trans "Owner → Building Manager → Staff กำหนดสิทธิ์ละเอียด enforce ที่ backend" %}</p>
+                    <a href="{% url 'core:login' %}" class="text-primary font-bold flex items-center gap-2 group-hover:gap-3 transition-all">
+                        {% trans "Learn more" %} <i class="fa-solid fa-arrow-right text-sm"></i>
+                    </a>
+                </div>
+
+                <!-- Feature 7: Import Wizard -->
+                <div class="group p-8 rounded-3xl border border-slate-100 bg-white hover:border-primary/50 hover:shadow-2xl hover:shadow-primary/10 transition-all duration-300">
+                    <div class="w-16 h-16 bg-teal-50 text-teal-600 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-primary group-hover:text-white transition-colors">
+                        <i class="fa-solid fa-file-excel text-2xl"></i>
+                    </div>
+                    <h4 class="text-xl font-bold text-dark mb-4">{% trans "Import Wizard" %}</h4>
+                    <p class="text-slate-500 mb-6">{% trans "Upload Excel พร้อม validate + preview ก่อน confirm ย้ายข้อมูลเก่าได้ทันที" %}</p>
+                    <a href="{% url 'core:login' %}" class="text-primary font-bold flex items-center gap-2 group-hover:gap-3 transition-all">
+                        {% trans "Learn more" %} <i class="fa-solid fa-arrow-right text-sm"></i>
+                    </a>
+                </div>
+
+                <!-- Feature 8: Report & Export -->
+                <div class="group p-8 rounded-3xl border border-slate-100 bg-white hover:border-primary/50 hover:shadow-2xl hover:shadow-primary/10 transition-all duration-300">
+                    <div class="w-16 h-16 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-primary group-hover:text-white transition-colors">
+                        <i class="fa-solid fa-chart-bar text-2xl"></i>
+                    </div>
+                    <h4 class="text-xl font-bold text-dark mb-4">{% trans "Report & Export" %}</h4>
+                    <p class="text-slate-500 mb-6">{% trans "Report แยกตึก รายได้ occupancy % บิลค้าง export CSV multi-month" %}</p>
+                    <a href="{% url 'core:login' %}" class="text-primary font-bold flex items-center gap-2 group-hover:gap-3 transition-all">
+                        {% trans "Learn more" %} <i class="fa-solid fa-arrow-right text-sm"></i>
+                    </a>
+                </div>
             </div>
         </div>
     </section>
@@ -279,6 +393,74 @@
             <div class="relative z-10">
                 <div class="absolute inset-0 bg-primary/30 blur-3xl rounded-full scale-75 animate-pulse"></div>
                 <img src="{% static 'img/landing/mockup.png' %}" alt="DMS Mobile App" loading="lazy" class="relative z-20 w-3/4 mx-auto drop-shadow-[0_35px_35px_rgba(0,0,0,0.5)] transform hover:rotate-2 transition-transform duration-700">
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="py-24 lg:py-32 bg-white dark:bg-slate-900">
+        <div class="max-w-6xl mx-auto px-4">
+            <div class="text-center max-w-3xl mx-auto mb-16 space-y-4">
+                <h2 class="text-primary font-bold tracking-widest uppercase text-sm">{% trans "แพ็กเกจ" %}</h2>
+                <h3 class="text-4xl lg:text-5xl font-extrabold text-dark dark:text-white">{% trans "เหมาะกับหอพักทุกขนาด" %}</h3>
+                <p class="text-lg text-slate-500 dark:text-slate-400">{% trans "เลือกแพ็กเกจที่ตรงกับขนาดหอพักของคุณ ปรับเปลี่ยนได้ตลอดเวลา" %}</p>
+            </div>
+            <div class="grid md:grid-cols-3 gap-8 items-start">
+                <!-- Starter -->
+                <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-600 shadow-sm p-8 space-y-6">
+                    <div>
+                        <h4 class="text-xl font-extrabold text-dark dark:text-white">{% trans "Starter" %}</h4>
+                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">{% trans "หอพัก 1–50 ห้อง" %}</p>
+                    </div>
+                    <ul class="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "บิลอัตโนมัติ" %}</li>
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "QR PromptPay" %}</li>
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "แจ้งเตือน LINE" %}</li>
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "แจ้งซ่อม Maintenance" %}</li>
+                    </ul>
+                    <a href="{% url 'core:login' %}" class="block w-full text-center py-3 rounded-xl border-2 border-primary text-primary font-bold hover:bg-primary hover:text-white transition-all">
+                        {% trans "เริ่มใช้งานฟรี" %}
+                    </a>
+                </div>
+
+                <!-- Pro (ยอดนิยม) -->
+                <div class="bg-white dark:bg-slate-800 rounded-2xl border-2 border-primary shadow-lg shadow-primary/10 p-8 space-y-6 relative">
+                    <div class="absolute -top-4 left-1/2 -translate-x-1/2">
+                        <span class="bg-primary text-white text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-wider">{% trans "ยอดนิยม" %}</span>
+                    </div>
+                    <div>
+                        <h4 class="text-xl font-extrabold text-dark dark:text-white">{% trans "Pro" %}</h4>
+                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">{% trans "หอพัก 51–200 ห้อง" %}</p>
+                    </div>
+                    <ul class="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "ทุกอย่างใน Starter" %}</li>
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "Multi-building" %}</li>
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "Audit Log" %}</li>
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "Role Management" %}</li>
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "Import Wizard" %}</li>
+                    </ul>
+                    <a href="mailto:support@dms.com" class="block w-full text-center py-3 rounded-xl bg-primary text-white font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/25">
+                        {% trans "นัด Demo" %}
+                    </a>
+                </div>
+
+                <!-- Enterprise -->
+                <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-600 shadow-sm p-8 space-y-6">
+                    <div>
+                        <h4 class="text-xl font-extrabold text-dark dark:text-white">{% trans "Enterprise" %}</h4>
+                        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">{% trans "200+ ห้อง" %}</p>
+                    </div>
+                    <ul class="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "ทุกอย่างใน Pro" %}</li>
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "REST API" %}</li>
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "SLA" %}</li>
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "Dedicated Support" %}</li>
+                        <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500 w-4"></i> {% trans "On-premise option" %}</li>
+                    </ul>
+                    <a href="mailto:support@dms.com" class="block w-full text-center py-3 rounded-xl border-2 border-slate-300 dark:border-slate-500 text-slate-700 dark:text-slate-200 font-bold hover:border-primary hover:text-primary dark:hover:text-primary transition-all">
+                        {% trans "ติดต่อทีมงาน" %}
+                    </a>
+                </div>
             </div>
         </div>
     </section>
@@ -345,7 +527,7 @@
         <div class="max-w-5xl mx-auto rounded-[3rem] bg-primary p-12 lg:p-24 text-center text-white relative overflow-hidden shadow-2xl shadow-primary/40">
             <div class="absolute top-0 left-0 w-full h-full opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
             <div class="relative z-10 space-y-8">
-                <h3 class="text-4xl lg:text-7xl font-extrabold mb-4">{% trans "Modernize Your Dormitory Today" %}</h3>
+                <h3 class="text-4xl lg:text-7xl font-extrabold mb-4">{% trans "เริ่มจัดการหอพักอย่างมืออาชีพวันนี้" %}</h3>
                 <p class="text-2xl text-blue-100 max-w-2xl mx-auto">
                     {% trans "ถึงเวลาเปลี่ยนมาใช้ระบบจัดการหอพักที่ช่วยให้ชีวิตคุณง่ายขึ้น" %}
                 </p>
@@ -357,7 +539,8 @@
                         {% trans "ติดต่อเจ้าหน้าที่" %}
                     </a>
                 </div>
-                <p class="text-sm font-medium text-blue-100/60">{% trans "No credit card required. Cancel anytime." %}</p>
+                <p class="text-sm font-medium text-blue-100/60">{% trans "ไม่ต้องใช้บัตรเครดิต ยกเลิกได้ทุกเมื่อ" %}</p>
+                <p class="text-sm font-medium text-blue-100/80">{% trans "ทีมงานช่วย onboard ฟรีใน 30 วันแรก" %}</p>
             </div>
         </div>
     </section>

@@ -4,7 +4,6 @@ from apps.tenants.views import (
     TenantDetailView,
     TenantCreateView,
     TenantUpdateView,
-    TenantImportView,
     AnonymizeTenantView,
 )
 
@@ -13,7 +12,6 @@ app_name = 'tenants'
 urlpatterns = [
     path('', TenantListView.as_view(), name='list'),
     path('add/', TenantCreateView.as_view(), name='create'),
-    path('import/', TenantImportView.as_view(), name='import'),
     path('<uuid:pk>/', TenantDetailView.as_view(), name='detail'),
     path('<uuid:pk>/edit/', TenantUpdateView.as_view(), name='update'),
     # PDPA Right to be Forgotten — owner only, irreversible

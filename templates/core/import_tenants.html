@@ -50,8 +50,8 @@
         </div>
     </div>
 
-    {% if not preview_rows %}
-    <!-- Upload form card -->
+    {% if not preview_rows and not error_rows %}
+    <!-- Upload form card — แสดงเฉพาะก่อน upload หรือหลัง cancel -->
     <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm p-4">
         <div class="flex items-start gap-3 mb-4">
             <div class="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center shrink-0">
@@ -87,37 +87,94 @@
     </div>
     {% endif %}
 
-    <!-- Validation errors -->
-    {% if errors %}
+    <!-- Fatal error (e.g. missing columns) -->
+    {% if fatal_error %}
     <div class="bg-white dark:bg-slate-800 rounded-xl border border-red-200 dark:border-red-700 shadow-sm p-4">
-        <div class="flex items-center gap-2 mb-3">
+        <div class="flex items-center gap-2 mb-2">
             <i class="fa-solid fa-circle-exclamation text-red-500"></i>
-            <h2 class="font-semibold text-red-700 dark:text-red-400">
-                {% trans "Validation Errors" %} ({{ errors|length }})
-            </h2>
+            <h2 class="font-semibold text-red-700 dark:text-red-400">{% trans "File Error" %}</h2>
         </div>
-        <ul class="space-y-1">
-            {% for error in errors %}
-            <li class="text-sm text-red-600 dark:text-red-400 flex items-start gap-2">
-                <i class="fa-solid fa-xmark mt-0.5 shrink-0"></i>
-                {{ error }}
-            </li>
-            {% endfor %}
-        </ul>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mt-3">
-            {% trans "Please fix the errors above and upload the file again." %}
-        </p>
+        <p class="text-sm text-red-600 dark:text-red-400">{{ fatal_error }}</p>
+        <a href="{% url 'core:import_tenants' %}"
+           class="inline-flex items-center gap-2 mt-3 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors">
+            <i class="fa-solid fa-arrow-left"></i>
+            {% trans "Try Again" %}
+        </a>
     </div>
     {% endif %}
 
-    <!-- Preview table -->
-    {% if preview_rows %}
+    <!-- Preview section — แสดงเมื่อมีผลการ validate -->
+    {% if preview_rows or error_rows %}
+
+    <!-- Summary bar -->
+    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm p-4">
+        <h2 class="font-semibold text-slate-900 dark:text-slate-100 mb-3">
+            <i class="fa-solid fa-chart-bar text-slate-500 dark:text-slate-400 mr-1"></i>
+            {% trans "Validation Summary" %}
+        </h2>
+        <div class="flex flex-wrap gap-3">
+            <div class="flex items-center gap-2 px-3 py-2 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg">
+                <i class="fa-solid fa-circle-check text-green-600 dark:text-green-400"></i>
+                <span class="text-sm font-medium text-green-700 dark:text-green-300">
+                    {{ preview_count }} {% trans "row(s) valid" %}
+                </span>
+            </div>
+            {% if has_errors %}
+            <div class="flex items-center gap-2 px-3 py-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg">
+                <i class="fa-solid fa-circle-xmark text-red-500 dark:text-red-400"></i>
+                <span class="text-sm font-medium text-red-700 dark:text-red-300">
+                    {{ error_count }} {% trans "row(s) with errors" %}
+                </span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Error rows table -->
+    {% if has_errors %}
+    <div class="bg-white dark:bg-slate-800 rounded-xl border border-red-200 dark:border-red-700 shadow-sm p-4">
+        <div class="flex items-center gap-2 mb-3">
+            <i class="fa-solid fa-triangle-exclamation text-red-500"></i>
+            <h2 class="font-semibold text-red-700 dark:text-red-400">
+                {% trans "Rows with Errors" %} ({{ error_count }})
+            </h2>
+        </div>
+        <div class="overflow-x-auto rounded-lg border border-red-200 dark:border-red-700">
+            <table class="w-full text-sm">
+                <thead class="bg-red-50 dark:bg-red-900/30">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-red-600 dark:text-red-400 uppercase">{% trans "Row" %}</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-red-600 dark:text-red-400 uppercase">{% trans "Error" %}</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-red-100 dark:divide-red-800">
+                    {% for err in error_rows %}
+                    <tr class="hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                        <td class="px-3 py-2 text-red-500 dark:text-red-400 font-mono text-xs w-16">
+                            {% if err.row_num %}{{ err.row_num }}{% else %}—{% endif %}
+                        </td>
+                        <td class="px-3 py-2 text-red-700 dark:text-red-300">{{ err.error }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Valid rows preview table -->
+    {% if has_valid %}
     <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm p-4">
         <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-2">
                 <i class="fa-solid fa-table text-slate-500 dark:text-slate-400"></i>
                 <h2 class="font-semibold text-slate-900 dark:text-slate-100">
-                    {% trans "Preview" %} — {{ preview_count }} {% trans "tenant(s) ready to import" %}
+                    {% trans "Valid Rows Preview" %}
+                    {% if preview_count > 10 %}
+                    <span class="text-sm font-normal text-slate-500 dark:text-slate-400">
+                        ({% trans "showing first 10 of" %} {{ preview_count }})
+                    </span>
+                    {% endif %}
                 </h2>
             </div>
         </div>
@@ -161,16 +218,43 @@
                 </tbody>
             </table>
         </div>
+    </div>
+    {% endif %}
 
-        <!-- Confirm + Cancel actions -->
-        <div class="flex items-center gap-3 mt-4">
+    <!-- Action buttons — แยก case ตามสถานะ -->
+    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm p-4">
+        {% if has_errors and has_valid %}
+        <!-- มีทั้ง valid และ error: ให้ user เลือก -->
+        <p class="text-sm text-amber-700 dark:text-amber-300 mb-4">
+            <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+            {% trans "Some rows have errors. You can import only the valid rows, or cancel to fix the file and re-upload." %}
+        </p>
+        <div class="flex flex-wrap items-center gap-3">
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="confirm">
                 <button type="submit"
                         class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-blue-600 rounded-lg transition-colors">
                     <i class="fa-solid fa-check"></i>
-                    {% trans "Confirm Import" %}
+                    {% trans "Import Valid Rows Only" %} ({{ preview_count }})
+                </button>
+            </form>
+            <a href="{% url 'core:import_tenants' %}"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+                {% trans "Cancel — Fix File and Re-upload" %}
+            </a>
+        </div>
+        {% elif has_valid and not has_errors %}
+        <!-- valid ทั้งหมด: ให้ Confirm ปกติ -->
+        <div class="flex items-center gap-3">
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="confirm">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-blue-600 rounded-lg transition-colors">
+                    <i class="fa-solid fa-check"></i>
+                    {% trans "Confirm Import" %} ({{ preview_count }} {% trans "tenants" %})
                 </button>
             </form>
             <a href="{% url 'core:import_tenants' %}"
@@ -179,8 +263,21 @@
                 {% trans "Cancel" %}
             </a>
         </div>
+        {% else %}
+        <!-- error ทั้งหมด: ไม่มีอะไร import ได้ -->
+        <p class="text-sm text-red-700 dark:text-red-300 mb-3">
+            <i class="fa-solid fa-circle-xmark mr-1"></i>
+            {% trans "All rows have errors. Please fix the file and re-upload." %}
+        </p>
+        <a href="{% url 'core:import_tenants' %}"
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors">
+            <i class="fa-solid fa-arrow-left"></i>
+            {% trans "Back to Upload" %}
+        </a>
+        {% endif %}
     </div>
-    {% endif %}
+
+    {% endif %}{# end preview/error section #}
 
 </div>
 {% endblock %}

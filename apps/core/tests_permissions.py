@@ -113,7 +113,8 @@ class AnonymousAccessTests(_PermFixture, TestCase):
         self._assert_redirects_to_login('/tenants/add/')
 
     def test_anonymous_tenant_import_redirects(self):
-        self._assert_redirects_to_login('/tenants/import/')
+        # single-step /tenants/import/ ถูกลบแล้ว — ใช้ /import/tenants/ แทน
+        self._assert_redirects_to_login('/import/tenants/')
 
 
 # ---------------------------------------------------------------------------
