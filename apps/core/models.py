@@ -86,6 +86,10 @@ class CustomUser(AbstractUser):
 
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.TENANT)
     theme = models.CharField(max_length=10, choices=Theme.choices, default=Theme.LIGHT)
+    line_user_id = models.CharField(
+        max_length=100, blank=True,
+        help_text='LINE User ID for push notifications (owner/staff)',
+    )
     dormitory = models.ForeignKey(
         Dormitory, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='users',

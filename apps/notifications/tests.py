@@ -299,3 +299,186 @@ class DeliverDunningChannelTests(SimpleTestCase):
 
         mock_line.assert_called_once_with(bill, 'pre_3d')
         mock_sms.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Payment notification tests (receipt to tenant + alert to owner)
+# ---------------------------------------------------------------------------
+
+
+class PushPaymentReceiptTests(SimpleTestCase):
+    """push_payment_receipt() — sends digital receipt to tenant(s) via LINE."""
+
+    def _make_bill_and_payment(self):
+        from datetime import date, datetime
+        bill = MagicMock()
+        bill.room.number = '201'
+        bill.invoice_number = 'INV-2601-005'
+        bill.month = date(2026, 1, 1)
+
+        payment = MagicMock()
+        payment.amount = 5500.00
+        payment.paid_at = datetime(2026, 1, 15, 14, 30)
+
+        return bill, payment
+
+    def test_sends_receipt_to_tenant_with_line_id(self):
+        """Tenant with line_id receives a receipt message."""
+        bill, payment = self._make_bill_and_payment()
+        profile = MagicMock()
+        profile.line_id = 'Utenant123'
+        bill.room.tenant_profiles.filter.return_value.select_related.return_value = [profile]
+
+        with patch('apps.notifications.line.push_text', return_value=True) as mock_push:
+            from apps.notifications.line import push_payment_receipt
+            result = push_payment_receipt(bill, payment)
+
+        self.assertTrue(result)
+        mock_push.assert_called_once()
+        call_args = mock_push.call_args
+        self.assertEqual(call_args[0][0], 'Utenant123')
+        self.assertIn('INV-2601-005', call_args[0][1])
+        self.assertIn('5,500.00', call_args[0][1])
+
+    def test_skips_tenant_without_line_id(self):
+        """Tenant without line_id is skipped gracefully."""
+        bill, payment = self._make_bill_and_payment()
+        profile = MagicMock()
+        profile.line_id = ''
+        bill.room.tenant_profiles.filter.return_value.select_related.return_value = [profile]
+
+        with patch('apps.notifications.line.push_text') as mock_push:
+            from apps.notifications.line import push_payment_receipt
+            result = push_payment_receipt(bill, payment)
+
+        self.assertFalse(result)
+        mock_push.assert_not_called()
+
+    def test_returns_false_on_exception(self):
+        """Returns False when tenant_profiles query raises exception."""
+        bill, payment = self._make_bill_and_payment()
+        bill.room.tenant_profiles.filter.side_effect = Exception('DB error')
+
+        from apps.notifications.line import push_payment_receipt
+        result = push_payment_receipt(bill, payment)
+
+        self.assertFalse(result)
+
+
+class PushPaymentOwnerNotificationTests(SimpleTestCase):
+    """push_payment_owner_notification() — notifies owner(s) via LINE."""
+
+    def _make_bill_and_payment(self):
+        from datetime import date, datetime
+        bill = MagicMock()
+        bill.room.number = '301'
+        bill.room.floor.building.dormitory = MagicMock()
+        bill.invoice_number = 'INV-2601-010'
+        bill.month = date(2026, 1, 1)
+
+        payment = MagicMock()
+        payment.amount = 8000.00
+        payment.paid_at = datetime(2026, 1, 20, 10, 0)
+
+        return bill, payment
+
+    def test_notifies_owner_with_line_user_id(self):
+        """Owner with line_user_id receives payment notification."""
+        bill, payment = self._make_bill_and_payment()
+        owner = MagicMock()
+        owner.line_user_id = 'Uowner456'
+
+        mock_qs = MagicMock()
+        mock_qs.exists.return_value = True
+        mock_qs.__iter__ = lambda s: iter([owner])
+
+        with patch('apps.core.models.CustomUser.objects') as mock_mgr, \
+             patch('apps.notifications.line.push_text', return_value=True) as mock_push:
+            mock_mgr.filter.return_value.exclude.return_value = mock_qs
+            from apps.notifications.line import push_payment_owner_notification
+            result = push_payment_owner_notification(bill, payment)
+
+        self.assertTrue(result)
+        mock_push.assert_called_once()
+        call_args = mock_push.call_args
+        self.assertEqual(call_args[0][0], 'Uowner456')
+        self.assertIn('INV-2601-010', call_args[0][1])
+        self.assertIn('8,000.00', call_args[0][1])
+
+    def test_no_owner_with_line_id_returns_false(self):
+        """Returns False when no owner has a line_user_id configured."""
+        bill, payment = self._make_bill_and_payment()
+
+        empty_qs = MagicMock()
+        empty_qs.exists.return_value = False
+        empty_qs.__iter__ = lambda s: iter([])
+
+        with patch('apps.core.models.CustomUser.objects') as mock_mgr, \
+             patch('apps.core.models.UserDormitoryRole.objects') as mock_udr, \
+             patch('apps.notifications.line.push_text') as mock_push:
+            mock_mgr.filter.return_value.exclude.return_value = empty_qs
+            mock_udr.filter.return_value.values_list.return_value = []
+
+            from apps.notifications.line import push_payment_owner_notification
+            result = push_payment_owner_notification(bill, payment)
+
+        self.assertFalse(result)
+        mock_push.assert_not_called()
+
+
+class TMRWebhookNotificationTests(TestCase):
+    """
+    Verify that the TMR webhook dispatches payment notification tasks
+    after successfully processing a payment.
+    """
+
+    def _create_test_bill(self):
+        """Create a minimal bill with all required FK chain for webhook test."""
+        from apps.core.models import Dormitory
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill, BillingSettings
+        from datetime import date, timedelta
+
+        dorm = Dormitory.objects.create(name='Test Dorm', address='123 Test St')
+        BillingSettings.objects.create(dormitory=dorm)
+        building = Building.objects.create(dormitory=dorm, name='A')
+        floor = Floor.objects.create(building=building, number=1)
+        room = Room.objects.create(floor=floor, number='101', base_rent=5000, status='occupied')
+        bill = Bill.unscoped_objects.create(
+            dormitory=dorm,
+            room=room,
+            month=date(2026, 1, 1),
+            base_rent=5000,
+            total=5500,
+            due_date=date(2026, 1, 31),
+            status='sent',
+            invoice_number='TEST-2601-001',
+        )
+        return bill
+
+    @override_settings(TMR_WEBHOOK_SECRET='')
+    def test_webhook_dispatches_receipt_and_owner_tasks(self):
+        """After successful payment, webhook queues both notification tasks."""
+        import json
+        bill = self._create_test_bill()
+
+        payload = json.dumps({
+            'ref': 'txn-unique-001',
+            'order_id': bill.invoice_number,
+            'amount': '5500.00',
+            'tmr_ref': 'TMR-REF-001',
+        })
+
+        with patch('apps.notifications.tasks.send_payment_receipt_task.delay') as mock_receipt, \
+             patch('apps.notifications.tasks.send_payment_owner_notification_task.delay') as mock_owner:
+            response = self.client.post(
+                '/billing/webhook/tmr/',
+                data=payload,
+                content_type='application/json',
+            )
+
+        self.assertEqual(response.status_code, 200)
+        bill.refresh_from_db()
+        self.assertEqual(bill.status, 'paid')
+        mock_receipt.assert_called_once_with(bill.pk)
+        mock_owner.assert_called_once_with(bill.pk)

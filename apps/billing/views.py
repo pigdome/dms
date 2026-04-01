@@ -206,6 +206,17 @@ def tmr_webhook(request):
             detail={'bill_id': bill.pk, 'invoice': bill.invoice_number, 'amount': data.get('amount')},
         )
 
+    # Queue LINE notifications: receipt to tenant + alert to owner
+    try:
+        from apps.notifications.tasks import (
+            send_payment_receipt_task,
+            send_payment_owner_notification_task,
+        )
+        send_payment_receipt_task.delay(bill.pk)
+        send_payment_owner_notification_task.delay(bill.pk)
+    except Exception:
+        pass  # Notification failure must not break payment processing
+
     return JsonResponse({'status': 'ok'})
 
 class BillCSVExportView(OwnerRequiredMixin, View):

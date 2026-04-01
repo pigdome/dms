@@ -157,6 +157,68 @@ def _send_sms_dunning(bill, trigger_type: str, sms_api_key: str, sms_sender_name
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_payment_receipt_task(self, bill_pk: int):
+    """
+    Send a digital receipt LINE message to the tenant after payment.
+    Called from the TMR webhook handler after bill is marked as paid.
+    """
+    from apps.billing.models import Bill
+
+    try:
+        bill = Bill.objects.select_related(
+            'room__floor__building__dormitory',
+            'payment',
+        ).get(pk=bill_pk)
+    except Bill.DoesNotExist:
+        logger.error('send_payment_receipt: Bill %s not found', bill_pk)
+        return
+
+    payment = getattr(bill, 'payment', None)
+    if not payment:
+        logger.warning('send_payment_receipt: Bill %s has no payment', bill_pk)
+        return
+
+    try:
+        from apps.notifications.line import push_payment_receipt
+        success = push_payment_receipt(bill, payment)
+        logger.info('Payment receipt sent for bill %s: %s', bill_pk, success)
+    except Exception as exc:
+        logger.warning('Payment receipt failed bill=%s: %s', bill_pk, exc)
+        raise self.retry(exc=exc) from exc
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_payment_owner_notification_task(self, bill_pk: int):
+    """
+    Push LINE notification to dormitory owner(s) when a payment is received.
+    Called from the TMR webhook handler after bill is marked as paid.
+    """
+    from apps.billing.models import Bill
+
+    try:
+        bill = Bill.objects.select_related(
+            'room__floor__building__dormitory',
+            'payment',
+        ).get(pk=bill_pk)
+    except Bill.DoesNotExist:
+        logger.error('send_payment_owner_notification: Bill %s not found', bill_pk)
+        return
+
+    payment = getattr(bill, 'payment', None)
+    if not payment:
+        logger.warning('send_payment_owner_notification: Bill %s has no payment', bill_pk)
+        return
+
+    try:
+        from apps.notifications.line import push_payment_owner_notification
+        success = push_payment_owner_notification(bill, payment)
+        logger.info('Payment owner notification sent for bill %s: %s', bill_pk, success)
+    except Exception as exc:
+        logger.warning('Payment owner notification failed bill=%s: %s', bill_pk, exc)
+        raise self.retry(exc=exc) from exc
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_parcel_notification_task(self, parcel_pk: int):
     """Notify a tenant that a parcel has arrived."""
     from django.utils import timezone

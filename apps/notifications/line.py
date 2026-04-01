@@ -115,6 +115,84 @@ def push_dunning_message(bill, trigger_type: str) -> bool:
     return sent
 
 
+def push_payment_receipt(bill, payment) -> bool:
+    """
+    Send a digital receipt to the tenant(s) in the bill's room after payment.
+    Returns True if at least one message was sent successfully.
+    """
+    try:
+        tenant_profiles = bill.room.tenant_profiles.filter(
+            leases__status='active'
+        ).select_related('user')
+    except Exception:
+        return False
+
+    total = f'{payment.amount:,.2f}'
+    paid_at = payment.paid_at.strftime('%d/%m/%Y %H:%M') if payment.paid_at else '-'
+    room_number = bill.room.number
+    invoice = bill.invoice_number or '-'
+    month_str = bill.month.strftime('%B %Y') if bill.month else '-'
+
+    sent = False
+    for profile in tenant_profiles:
+        if not profile.line_id:
+            continue
+        text = (
+            f'Receipt / ใบเสร็จรับเงิน\n'
+            f'Invoice: {invoice}\n'
+            f'Room {room_number} - {month_str}\n'
+            f'Amount: {total} THB\n'
+            f'Paid: {paid_at}\n'
+            f'Thank you for your payment!'
+        )
+        if push_text(profile.line_id, text):
+            sent = True
+    return sent
+
+
+def push_payment_owner_notification(bill, payment) -> bool:
+    """
+    Notify the dormitory owner(s) when a payment is received.
+    Looks up users with role=owner who have a line_user_id and belong to
+    the dormitory of the bill.
+    Returns True if at least one message was sent successfully.
+    """
+    from apps.core.models import CustomUser
+    dormitory = bill.room.floor.building.dormitory
+
+    owners = CustomUser.objects.filter(
+        dormitory=dormitory,
+        role=CustomUser.Role.OWNER,
+    ).exclude(line_user_id='')
+
+    if not owners.exists():
+        # Also check UserDormitoryRole for owners assigned to this dormitory
+        from apps.core.models import UserDormitoryRole
+        owner_ids = UserDormitoryRole.objects.filter(
+            dormitory=dormitory,
+            role=CustomUser.Role.OWNER,
+        ).values_list('user_id', flat=True)
+        owners = CustomUser.objects.filter(
+            pk__in=owner_ids,
+        ).exclude(line_user_id='')
+
+    total = f'{payment.amount:,.2f}'
+    room_number = bill.room.number
+    invoice = bill.invoice_number or '-'
+
+    sent = False
+    for owner in owners:
+        text = (
+            f'Payment received!\n'
+            f'Invoice: {invoice}\n'
+            f'Room {room_number} - {total} THB\n'
+            f'Bill status: Paid'
+        )
+        if push_text(owner.line_user_id, text):
+            sent = True
+    return sent
+
+
 def push_broadcast(broadcast) -> int:
     """Send broadcast message to tenants. Returns number of messages sent."""
     from apps.tenants.models import TenantProfile
