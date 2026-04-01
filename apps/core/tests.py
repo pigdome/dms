@@ -1155,3 +1155,315 @@ class ImportTenantsPartialPreviewTests(_ImportFixture, TestCase):
         resp = self.client.post('/import/tenants/', {'action': 'upload', 'excel_file': f})
         self.assertLessEqual(len(resp.context['preview_rows']), 10)
         self.assertEqual(resp.context['preview_count'], 15)
+
+
+# ---------------------------------------------------------------------------
+# Flow 8: Multi-Property Owner Switching Integration Tests
+# ---------------------------------------------------------------------------
+
+
+class MultiPropertySwitchingIntegrationTests(TestCase):
+    """
+    Integration tests for multi-property owner switching:
+    session update, room/bill scoping after switch, unauthorized switch rejection.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill
+        from datetime import date
+
+        cls.dorm_a = Dormitory.objects.create(
+            name='Switch Dorm A', address='Addr A', invoice_prefix='SWA'
+        )
+        cls.dorm_b = Dormitory.objects.create(
+            name='Switch Dorm B', address='Addr B', invoice_prefix='SWB'
+        )
+        cls.dorm_c = Dormitory.objects.create(
+            name='Switch Dorm C (Unauthorized)', address='Addr C', invoice_prefix='SWC'
+        )
+
+        cls.owner = CustomUser.objects.create_user(
+            'switch_owner', password='pass', role='owner', dormitory=cls.dorm_a
+        )
+        # owner มีสิทธิ์ทั้ง dorm_a และ dorm_b แต่ไม่มี dorm_c
+        UserDormitoryRole.objects.create(
+            user=cls.owner, dormitory=cls.dorm_a, role='owner', is_primary=True
+        )
+        UserDormitoryRole.objects.create(
+            user=cls.owner, dormitory=cls.dorm_b, role='owner'
+        )
+
+        # สร้างห้องใน dorm_a และ dorm_b
+        ba = Building.objects.create(dormitory=cls.dorm_a, name='BA')
+        fa = Floor.objects.create(building=ba, number=1)
+        cls.room_a = Room.objects.create(floor=fa, number='101', base_rent=4000)
+
+        bb = Building.objects.create(dormitory=cls.dorm_b, name='BB')
+        fb = Floor.objects.create(building=bb, number=1)
+        cls.room_b = Room.objects.create(floor=fb, number='201', base_rent=5000)
+
+        # สร้าง bills ใน dorm_a และ dorm_b
+        cls.bill_a = Bill.objects.create(
+            room=cls.room_a,
+            month=date(2025, 1, 1),
+            base_rent=4000,
+            total=4000,
+            due_date=date(2025, 1, 25),
+        )
+        cls.bill_b = Bill.objects.create(
+            room=cls.room_b,
+            month=date(2025, 1, 1),
+            base_rent=5000,
+            total=5000,
+            due_date=date(2025, 1, 25),
+        )
+
+    def setUp(self):
+        self.client.force_login(self.owner)
+
+    def test_switch_changes_active_dormitory_in_session(self):
+        """POST /property/switch/ → session active_dormitory_id เปลี่ยนเป็น dorm_b"""
+        resp = self.client.post('/property/switch/', {
+            'dormitory_id': str(self.dorm_b.pk),
+            'next': '/dashboard/',
+        })
+        self.assertRedirects(resp, '/dashboard/', fetch_redirect_response=False)
+        self.assertEqual(
+            self.client.session.get('active_dormitory_id'),
+            str(self.dorm_b.pk)
+        )
+
+    def test_rooms_scoped_after_switch(self):
+        """switch ไป dorm_b → GET /maintenance/ เห็นแค่ ticket ของ dorm_b
+        (RoomListView ใช้ user.dormitory โดยตรง แต่ MaintenanceListView ใช้ active_dormitory)
+        """
+        from apps.maintenance.models import MaintenanceTicket
+
+        # สร้าง ticket ใน dorm_b
+        ticket_b = MaintenanceTicket.objects.create(
+            room=self.room_b, reported_by=self.owner, description='Ticket in dorm B'
+        )
+        ticket_a = MaintenanceTicket.objects.create(
+            room=self.room_a, reported_by=self.owner, description='Ticket in dorm A'
+        )
+
+        # switch ไป dorm_b
+        self.client.post('/property/switch/', {'dormitory_id': str(self.dorm_b.pk)})
+
+        resp = self.client.get('/maintenance/')
+        self.assertEqual(resp.status_code, 200)
+        tickets = list(resp.context['tickets'])
+        ticket_ids = {t.pk for t in tickets}
+        self.assertIn(ticket_b.pk, ticket_ids)
+        self.assertNotIn(ticket_a.pk, ticket_ids)
+
+    def test_bills_scoped_after_switch(self):
+        """switch ไป dorm_b → GET /billing/ เห็นแค่ bill ของ dorm_b"""
+        self.client.post('/property/switch/', {'dormitory_id': str(self.dorm_b.pk)})
+
+        resp = self.client.get('/billing/', {'month': '2025-01'})
+        self.assertEqual(resp.status_code, 200)
+        bills = list(resp.context['bills'])
+        bill_ids = {b.pk for b in bills}
+        self.assertIn(self.bill_b.pk, bill_ids)
+        self.assertNotIn(self.bill_a.pk, bill_ids)
+
+    def test_switch_to_unauthorized_dorm_rejected(self):
+        """switch ไป dorm_c ที่ไม่มี UserDormitoryRole → ไม่เปลี่ยน session"""
+        # session ปัจจุบัน active ที่ dorm_a
+        self.client.post('/property/switch/', {'dormitory_id': str(self.dorm_a.pk)})
+        session_before = self.client.session.get('active_dormitory_id')
+
+        # พยายาม switch ไป dorm_c (unauthorized)
+        self.client.post('/property/switch/', {'dormitory_id': str(self.dorm_c.pk)})
+
+        # session ต้องไม่เปลี่ยนไปเป็น dorm_c
+        self.assertNotEqual(
+            self.client.session.get('active_dormitory_id'),
+            str(self.dorm_c.pk)
+        )
+
+
+# ---------------------------------------------------------------------------
+# Flow 12: Activity Audit Trail Completeness Integration Tests
+# ---------------------------------------------------------------------------
+
+
+class AuditTrailCompletenessTests(TestCase):
+    """
+    Integration tests for audit trail completeness:
+    room create, bill status change, billing settings update,
+    payment webhook, audit log scoping, and staff access control.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from apps.rooms.models import Building, Floor
+        from apps.billing.models import Bill, BillingSettings
+        from datetime import date
+
+        cls.dorm_a = Dormitory.objects.create(
+            name='Audit Trail Dorm A', address='Addr A', invoice_prefix='AT1'
+        )
+        cls.dorm_b = Dormitory.objects.create(
+            name='Audit Trail Dorm B', address='Addr B', invoice_prefix='AT2'
+        )
+
+        cls.owner_a = CustomUser.objects.create_user(
+            'at_owner_a', password='pass', role='owner', dormitory=cls.dorm_a
+        )
+        cls.staff_a = CustomUser.objects.create_user(
+            'at_staff_a', password='pass', role='staff', dormitory=cls.dorm_a
+        )
+        cls.owner_b = CustomUser.objects.create_user(
+            'at_owner_b', password='pass', role='owner', dormitory=cls.dorm_b
+        )
+
+        cls.building = Building.objects.create(dormitory=cls.dorm_a, name='AT Bldg')
+        cls.floor = Floor.objects.create(building=cls.building, number=1)
+        cls.room = None  # สร้างใน test ที่ต้องการ (เพราะ room_created test จะสร้างเอง)
+
+        # สร้าง room สำเร็จไว้สำหรับ bill tests
+        from apps.rooms.models import Room
+        cls.existing_room = Room.objects.create(
+            floor=cls.floor, number='AT-101', base_rent=5000
+        )
+
+        cls.billing_settings = BillingSettings.objects.create(
+            dormitory=cls.dorm_a, bill_day=1, grace_days=5, elec_rate=7, water_rate=18
+        )
+
+        cls.bill = Bill.objects.create(
+            room=cls.existing_room,
+            month=date(2025, 3, 1),
+            base_rent=5000,
+            total=5000,
+            due_date=date(2025, 3, 25),
+            status='sent',
+            invoice_number='AT1-2503-001',
+        )
+
+        # ActivityLog สำหรับ dorm_b เพื่อทดสอบ isolation
+        ActivityLog.objects.create(
+            dormitory=cls.dorm_b,
+            user=cls.owner_b,
+            action='some_action_in_dorm_b',
+            detail={},
+        )
+
+    def _set_session_dorm(self, dormitory):
+        """Helper: set active dormitory ใน session"""
+        session = self.client.session
+        session['active_dormitory_id'] = str(dormitory.pk)
+        session.save()
+
+    def test_room_create_logged(self):
+        """POST สร้างห้อง → ActivityLog action='room_created'"""
+        self.client.force_login(self.owner_a)
+        self._set_session_dorm(self.dorm_a)
+
+        resp = self.client.post('/rooms/create/', {
+            'floor': str(self.floor.pk),
+            'number': 'AUDIT-NEW',
+            'status': 'vacant',
+            'base_rent': '5000',
+        })
+        self.assertEqual(resp.status_code, 302)
+
+        log = ActivityLog.objects.filter(
+            dormitory=self.dorm_a,
+            action='room_created',
+        ).first()
+        self.assertIsNotNone(log)
+        self.assertIn('AUDIT-NEW', str(log.detail.get('room_number', '')))
+
+    def test_bill_status_change_logged(self):
+        """POST เปลี่ยน bill status → ActivityLog action='bill_status_changed'"""
+        self.client.force_login(self.owner_a)
+        self._set_session_dorm(self.dorm_a)
+
+        resp = self.client.post(
+            f'/billing/{self.bill.pk}/',
+            {'status': 'overdue'}
+        )
+        self.assertRedirects(
+            resp, f'/billing/{self.bill.pk}/', fetch_redirect_response=False
+        )
+
+        log = ActivityLog.objects.filter(
+            dormitory=self.dorm_a,
+            action='bill_status_changed',
+            detail__bill_id=str(self.bill.pk),
+        ).first()
+        self.assertIsNotNone(log)
+
+    def test_billing_settings_update_logged(self):
+        """POST update billing settings → ActivityLog action='billing_settings_updated'"""
+        self.client.force_login(self.owner_a)
+        self._set_session_dorm(self.dorm_a)
+
+        resp = self.client.post('/billing/settings/', {
+            'bill_day': '1',
+            'grace_days': '7',
+            'elec_rate': '8.00',
+            'water_rate': '20.00',
+            'dunning_enabled': True,
+        })
+        # redirect หลัง save
+        self.assertEqual(resp.status_code, 302)
+
+        log = ActivityLog.objects.filter(
+            dormitory=self.dorm_a,
+            action='billing_settings_updated',
+        ).first()
+        self.assertIsNotNone(log)
+
+    def test_payment_webhook_logged(self):
+        """TMR webhook payment → ActivityLog action='payment_received_webhook'"""
+        import json, hashlib, hmac as _hmac
+        body = json.dumps({
+            'ref': 'AUDIT-TXN-001',
+            'order_id': 'AT1-2503-001',
+            'amount': '5000.00',
+        }).encode()
+
+        with self.settings(TMR_WEBHOOK_SECRET=''):
+            resp = self.client.post(
+                '/billing/webhook/tmr/',
+                data=body,
+                content_type='application/json',
+            )
+        self.assertEqual(resp.status_code, 200)
+
+        log = ActivityLog.objects.filter(
+            action='payment_received_webhook',
+            detail__invoice='AT1-2503-001',
+        ).first()
+        self.assertIsNotNone(log)
+
+    def test_audit_log_view_scoped_to_dormitory(self):
+        """owner เห็น log เฉพาะ dorm ตัวเอง (ไม่เห็น log ของ dorm_b)"""
+        self.client.force_login(self.owner_a)
+        self._set_session_dorm(self.dorm_a)
+
+        resp = self.client.get('/audit-log/')
+        self.assertEqual(resp.status_code, 200)
+
+        page_logs = list(resp.context['page_obj'].object_list)
+        wrong_dorms = {
+            str(log.dormitory_id)
+            for log in page_logs
+            if log.dormitory_id != self.dorm_a.pk
+        }
+        self.assertFalse(
+            wrong_dorms,
+            f"พบ log จาก dormitory อื่น: {wrong_dorms}"
+        )
+
+    def test_staff_cannot_access_audit_log(self):
+        """staff GET /audit-log/ → 403 (OwnerRequiredMixin)"""
+        self.client.force_login(self.staff_a)
+        resp = self.client.get('/audit-log/')
+        self.assertEqual(resp.status_code, 403)

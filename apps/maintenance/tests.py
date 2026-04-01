@@ -169,3 +169,141 @@ class TenantTicketCreateWithActiveLease(TestCase):
         self.assertEqual(len(tickets), 2)
         self.assertIn(t1, tickets)
         self.assertIn(t2, tickets)
+
+
+# ---------------------------------------------------------------------------
+# Flow 5: Maintenance Ticket Full Lifecycle Integration Tests
+# ---------------------------------------------------------------------------
+
+
+class MaintenanceLifecycleIntegrationTests(TestCase):
+    """
+    Integration tests for the complete maintenance ticket lifecycle:
+    tenant submit → staff view → status transitions → tenant sees update → dashboard count.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.dorm = Dormitory.objects.create(name='Lifecycle Dorm', address='Addr')
+        cls.room = _make_room(cls.dorm, '501')
+        cls.room2 = _make_room(cls.dorm, '502')
+
+        cls.staff = CustomUser.objects.create_user(
+            'lc_staff', password='pass', role='staff', dormitory=cls.dorm
+        )
+        cls.owner = CustomUser.objects.create_user(
+            'lc_owner', password='pass', role='owner', dormitory=cls.dorm
+        )
+
+        # Tenant with active lease
+        cls.tenant_user = CustomUser.objects.create_user(
+            'lc_tenant', password='pass', role='tenant', dormitory=cls.dorm
+        )
+        from apps.tenants.models import TenantProfile, Lease
+        # legacy profile.room = room2 (old room)
+        cls.profile = TenantProfile.objects.create(user=cls.tenant_user, room=cls.room2)
+        # active lease → room (new room)
+        Lease.objects.create(
+            tenant=cls.profile, room=cls.room,
+            status='active', start_date=date(2025, 1, 1)
+        )
+
+    def test_tenant_submit_ticket_uses_active_lease_room(self):
+        """tenant POST /tenant/maintenance/ → ticket.room = ห้องจาก active lease"""
+        self.client.force_login(self.tenant_user)
+        resp = self.client.post('/tenant/maintenance/', {
+            'description': 'AC broken in active room',
+        })
+        self.assertEqual(resp.status_code, 302)
+        ticket = MaintenanceTicket.objects.filter(
+            reported_by=self.tenant_user, description='AC broken in active room'
+        ).first()
+        self.assertIsNotNone(ticket)
+        # ต้องใช้ห้องจาก active lease ไม่ใช่ profile.room (legacy)
+        self.assertEqual(ticket.room, self.room)
+        self.assertNotEqual(ticket.room, self.room2)
+
+    def test_staff_sees_ticket_in_list(self):
+        """staff GET /maintenance/ → เห็น ticket ในรายการ"""
+        ticket = MaintenanceTicket.objects.create(
+            room=self.room, reported_by=self.staff, description='Broken door'
+        )
+        self.client.force_login(self.staff)
+        resp = self.client.get('/maintenance/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(ticket, list(resp.context['tickets']))
+
+    def test_status_transitions_full_cycle(self):
+        """staff อัพเดต new→in_progress→waiting_parts→completed → TicketStatusHistory มี 4 entries"""
+        ticket = MaintenanceTicket.objects.create(
+            room=self.room, reported_by=self.staff, description='Full cycle test'
+        )
+        # สร้าง initial history entry (status=new)
+        TicketStatusHistory.objects.create(
+            ticket=ticket, status='new', changed_by=self.staff, note='Created'
+        )
+
+        self.client.force_login(self.staff)
+        for new_status in ['in_progress', 'waiting_parts', 'completed']:
+            resp = self.client.post(
+                f'/maintenance/{ticket.pk}/update-status/',
+                {'status': new_status, 'note': f'Moving to {new_status}'}
+            )
+            self.assertRedirects(
+                resp, f'/maintenance/{ticket.pk}/', fetch_redirect_response=False
+            )
+
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.status, 'completed')
+        history_count = TicketStatusHistory.objects.filter(ticket=ticket).count()
+        self.assertEqual(history_count, 4)
+
+    def test_tenant_sees_updated_status_in_portal(self):
+        """หลัง status update, tenant GET portal เห็น ticket status ล่าสุด"""
+        ticket = MaintenanceTicket.objects.create(
+            room=self.room, reported_by=self.tenant_user, description='Portal status test'
+        )
+
+        # staff update status
+        self.client.force_login(self.staff)
+        self.client.post(
+            f'/maintenance/{ticket.pk}/update-status/',
+            {'status': 'in_progress', 'note': 'Started'}
+        )
+
+        # tenant เข้าดู portal
+        self.client.force_login(self.tenant_user)
+        resp = self.client.get('/tenant/maintenance/')
+        self.assertEqual(resp.status_code, 200)
+
+        # ต้องเห็น ticket ที่ status อัพเดตแล้ว
+        tickets = list(resp.context['tickets'])
+        updated = next((t for t in tickets if t.pk == ticket.pk), None)
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.status, 'in_progress')
+
+    def test_dashboard_pending_decreases_after_completion(self):
+        """ticket completed → Dashboard pending_maintenance count ลด"""
+        ticket = MaintenanceTicket.objects.create(
+            room=self.room, reported_by=self.staff,
+            description='Dashboard count test', status='new'
+        )
+
+        from apps.maintenance.models import MaintenanceTicket as MT
+        pending_before = MT.objects.filter(
+            room__floor__building__dormitory=self.dorm,
+            status__in=['new', 'in_progress', 'waiting_parts'],
+        ).count()
+
+        self.client.force_login(self.staff)
+        self.client.post(
+            f'/maintenance/{ticket.pk}/update-status/',
+            {'status': 'completed', 'note': 'Done'}
+        )
+
+        pending_after = MT.objects.filter(
+            room__floor__building__dormitory=self.dorm,
+            status__in=['new', 'in_progress', 'waiting_parts'],
+        ).count()
+
+        self.assertEqual(pending_after, pending_before - 1)

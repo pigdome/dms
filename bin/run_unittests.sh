@@ -33,10 +33,9 @@ DEFAULT_APPS=(
     apps.tenants
     apps.rooms
     apps.maintenance
+    apps.notifications
     apps.dashboard
 )
-# apps.notifications excluded: requires 'requests' package not installed in venv
-# Run manually: ./bin/run_unittests.sh apps.notifications
 
 if [ $# -gt 0 ]; then
     TEST_TARGETS=("$@")

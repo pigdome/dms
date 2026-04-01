@@ -1251,3 +1251,431 @@ class BillAPIDetailTests(TestCase):
         """ไม่มี token → 401"""
         resp = self.client.get(f'/api/bills/{self.bill.pk}/')
         self.assertEqual(resp.status_code, 401)
+
+
+# ---------------------------------------------------------------------------
+# Flow 3 Integration: Meter Reading → Bill → Payment (Core Billing Cycle)
+# ---------------------------------------------------------------------------
+
+class BillingCycleIntegrationTests(TestCase):
+    """
+    E2E Flow 3: ครอบคลุมวงจรการเรียกเก็บเงินทั้งหมด
+      1. staff บันทึกมิเตอร์
+      2. system generate บิล (ยอดถูกต้อง)
+      3. staff เห็นบิลใน list
+      4. owner อัพเดต status เป็น sent
+      5. tenant เห็นบิลใน portal
+      6. TMR webhook → bill paid + Payment record
+      7. duplicate webhook → idempotency ป้องกัน
+      8. dashboard reports → revenue อัพเดต
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory, CustomUser
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import BillingSettings
+        from apps.tenants.models import TenantProfile, Lease
+
+        # ตั้งค่าหอพัก + billing settings
+        cls.dorm = Dormitory.objects.create(
+            name='Cycle Dorm', address='Cycle Addr', invoice_prefix='CYC'
+        )
+        BillingSettings.objects.create(
+            dormitory=cls.dorm,
+            bill_day=1,
+            grace_days=5,
+            water_rate=18,
+            elec_rate=7,
+        )
+
+        # สร้างโครงสร้างห้อง
+        building = Building.objects.create(dormitory=cls.dorm, name='A')
+        floor = Floor.objects.create(building=building, number=1)
+        cls.room = Room.objects.create(
+            floor=floor, number='101', base_rent=5000, status=Room.Status.OCCUPIED
+        )
+
+        # users
+        cls.owner = CustomUser.objects.create_user(
+            'cyc_owner', password='pass', role='owner', dormitory=cls.dorm
+        )
+        cls.staff = CustomUser.objects.create_user(
+            'cyc_staff', password='pass', role='staff', dormitory=cls.dorm
+        )
+        cls.tenant_user = CustomUser.objects.create_user(
+            'cyc_tenant', password='pass', role='tenant', dormitory=cls.dorm
+        )
+
+        # tenant profile + active lease ผูกกับห้อง
+        cls.profile = TenantProfile.objects.create(
+            user=cls.tenant_user,
+            dormitory=cls.dorm,
+        )
+        Lease.objects.create(
+            tenant=cls.profile,
+            room=cls.room,
+            status=Lease.Status.ACTIVE,
+            start_date=date(2026, 1, 1),
+        )
+
+        cls.billing_month = date(2026, 3, 1)
+
+    # ------------------------------------------------------------------
+    # 1. Staff บันทึกมิเตอร์ผ่าน view
+    # ------------------------------------------------------------------
+
+    def test_meter_reading_creates_record(self):
+        from apps.rooms.models import MeterReading
+        self.client.force_login(self.staff)
+        resp = self.client.post(
+            reverse('rooms:meter_reading'),
+            {
+                'room': str(self.room.pk),
+                'reading_date': '2026-03-15',
+                'water_prev': '100',
+                'water_curr': '115',   # 15 units
+                'elec_prev': '500',
+                'elec_curr': '580',    # 80 units
+            },
+        )
+        # redirect หลัง success
+        self.assertIn(resp.status_code, [200, 302])
+        reading = MeterReading.objects.filter(
+            room=self.room, reading_date=date(2026, 3, 15)
+        ).first()
+        self.assertIsNotNone(reading, 'ต้องมี MeterReading หลัง POST')
+        self.assertEqual(reading.water_prev, 100)
+        self.assertEqual(reading.water_curr, 115)
+        self.assertEqual(reading.elec_prev, 500)
+        self.assertEqual(reading.elec_curr, 580)
+
+    # ------------------------------------------------------------------
+    # 2. generate_bills_for_dormitory ใช้ค่ามิเตอร์คำนวณยอดถูกต้อง
+    # ------------------------------------------------------------------
+
+    def test_generate_bills_uses_meter_reading(self):
+        from apps.rooms.models import MeterReading
+        from apps.billing.models import Bill
+        # สร้าง meter reading โดยตรง (unit test ของ service)
+        MeterReading.objects.create(
+            room=self.room,
+            water_prev=100, water_curr=115,   # 15 units × 18 = 270
+            elec_prev=500, elec_curr=580,      # 80 units × 7  = 560
+            reading_date=date(2026, 4, 15),
+            recorded_by=None,
+        )
+        bills = generate_bills_for_dormitory(self.dorm, date(2026, 4, 1))
+        self.assertEqual(len(bills), 1)
+        bill = bills[0]
+        self.assertEqual(bill.water_amt, Decimal('270.00'))   # 15 × 18
+        self.assertEqual(bill.elec_amt, Decimal('560.00'))    # 80 × 7
+        self.assertEqual(bill.total, Decimal('5830.00'))      # 5000 + 270 + 560
+        self.assertIsNotNone(bill.meter_reading)
+
+    # ------------------------------------------------------------------
+    # 3. Staff เห็นบิลใน /billing/ list
+    # ------------------------------------------------------------------
+
+    def test_bill_appears_in_staff_list(self):
+        from apps.billing.models import Bill
+        bill = Bill.objects.create(
+            room=self.room,
+            month=date(2026, 5, 1),
+            base_rent=5000,
+            water_amt=Decimal('270'),
+            elec_amt=Decimal('560'),
+            total=Decimal('5830'),
+            due_date=date(2026, 5, 6),
+            status=Bill.Status.SENT,
+        )
+        self.client.force_login(self.staff)
+        resp = self.client.get(reverse('billing:list'), {'month': '2026-05'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(bill, resp.context['bills'])
+
+    # ------------------------------------------------------------------
+    # 4. Owner เปลี่ยน status draft → sent ผ่าน BillDetailView POST
+    # ------------------------------------------------------------------
+
+    def test_owner_can_mark_bill_sent(self):
+        from apps.billing.models import Bill
+        bill = Bill.objects.create(
+            room=self.room,
+            month=date(2026, 6, 1),
+            base_rent=5000,
+            total=5000,
+            due_date=date(2026, 6, 6),
+            status=Bill.Status.DRAFT,
+        )
+        self.client.force_login(self.owner)
+        resp = self.client.post(
+            reverse('billing:detail', args=[bill.pk]),
+            {'status': 'sent'},
+        )
+        self.assertRedirects(resp, reverse('billing:detail', args=[bill.pk]),
+                             fetch_redirect_response=False)
+        bill.refresh_from_db()
+        self.assertEqual(bill.status, Bill.Status.SENT)
+
+    # ------------------------------------------------------------------
+    # 5. Tenant เห็นบิลที่ status=sent ใน portal /tenant/bills/
+    # ------------------------------------------------------------------
+
+    def test_bill_status_sent_visible_to_tenant(self):
+        from apps.billing.models import Bill
+        bill = Bill.objects.create(
+            room=self.room,
+            month=date(2026, 7, 1),
+            base_rent=5000,
+            total=5000,
+            due_date=date(2026, 7, 6),
+            status=Bill.Status.SENT,
+        )
+        self.client.force_login(self.tenant_user)
+        resp = self.client.get(reverse('tenant:bills'))
+        self.assertEqual(resp.status_code, 200)
+        # TenantBillsView ส่ง context all_bills
+        self.assertIn(bill, resp.context['all_bills'])
+
+    # ------------------------------------------------------------------
+    # 6. TMR Webhook → bill paid + Payment record สร้าง
+    # ------------------------------------------------------------------
+
+    def test_tmr_webhook_marks_bill_paid(self):
+        from apps.billing.models import Bill, Payment
+        bill = Bill.objects.create(
+            room=self.room,
+            month=date(2026, 8, 1),
+            base_rent=5000,
+            total=5000,
+            due_date=date(2026, 8, 6),
+            status=Bill.Status.SENT,
+            invoice_number='CYC-2608-INT01',
+        )
+        with self.settings(TMR_WEBHOOK_SECRET=''):
+            resp = self.client.post(
+                reverse('billing:tmr_webhook'),
+                data=json.dumps({
+                    'ref': 'TXN-INT-001',
+                    'order_id': 'CYC-2608-INT01',
+                    'amount': '5000.00',
+                }).encode(),
+                content_type='application/json',
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(json.loads(resp.content)['status'], 'ok')
+        bill.refresh_from_db()
+        self.assertEqual(bill.status, Bill.Status.PAID)
+        self.assertTrue(Payment.objects.filter(idempotency_key='TXN-INT-001').exists())
+
+    # ------------------------------------------------------------------
+    # 7. Idempotency: webhook ซ้ำ → ไม่สร้าง Payment สองรอบ
+    # ------------------------------------------------------------------
+
+    def test_tmr_webhook_idempotency(self):
+        from apps.billing.models import Bill, Payment
+        bill = Bill.objects.create(
+            room=self.room,
+            month=date(2026, 9, 1),
+            base_rent=5000,
+            total=5000,
+            due_date=date(2026, 9, 6),
+            status=Bill.Status.SENT,
+            invoice_number='CYC-2609-INT02',
+        )
+        payload = json.dumps({
+            'ref': 'TXN-INT-DUP',
+            'order_id': 'CYC-2609-INT02',
+            'amount': '5000.00',
+        }).encode()
+        with self.settings(TMR_WEBHOOK_SECRET=''):
+            self.client.post(
+                reverse('billing:tmr_webhook'),
+                data=payload, content_type='application/json',
+            )
+            resp2 = self.client.post(
+                reverse('billing:tmr_webhook'),
+                data=payload, content_type='application/json',
+            )
+        self.assertEqual(resp2.status_code, 200)
+        self.assertEqual(json.loads(resp2.content)['status'], 'already_processed')
+        # ต้องมี Payment แค่ 1 รายการ ไม่ซ้ำ
+        self.assertEqual(
+            Payment.objects.filter(idempotency_key='TXN-INT-DUP').count(), 1
+        )
+
+    # ------------------------------------------------------------------
+    # 8. Dashboard reports → revenue อัพเดตหลังจ่ายเงิน
+    # ------------------------------------------------------------------
+
+    def test_dashboard_revenue_after_payment(self):
+        from apps.billing.models import Bill, Payment
+        from django.utils import timezone
+        bill = Bill.objects.create(
+            room=self.room,
+            month=date(2026, 10, 1),
+            base_rent=5000,
+            total=5000,
+            due_date=date(2026, 10, 6),
+            status=Bill.Status.PAID,
+            invoice_number='CYC-2610-INT03',
+        )
+        Payment.objects.create(
+            bill=bill,
+            amount=5000,
+            tmr_ref='TXN-INT-REV',
+            idempotency_key='TXN-INT-REV',
+            paid_at=timezone.now(),
+        )
+        self.client.force_login(self.owner)
+        resp = self.client.get(reverse('dashboard:reports'), {'month': '2026-10'})
+        self.assertEqual(resp.status_code, 200)
+        # revenue ต้องมีค่า ≥ 5000 (อาจมี bill อื่นในเดือนเดียวกัน)
+        total_revenue = sum(
+            b['revenue'] for b in resp.context['buildings_data']
+            if b['revenue']
+        )
+        self.assertGreaterEqual(total_revenue, 5000)
+
+
+# ---------------------------------------------------------------------------
+# Flow 11: CSV Export Accuracy Integration Tests
+# ---------------------------------------------------------------------------
+
+
+class CSVExportAccuracyTests(TestCase):
+    """
+    Integration tests for CSV export accuracy:
+    row count matches bills, invoice number present, totals match report,
+    dormitory scoping (no cross-tenant data).
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory, CustomUser
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill, BillingSettings
+        from django.utils import timezone
+
+        cls.dorm_a = Dormitory.objects.create(
+            name='CSV Acc Dorm A', address='Addr A', invoice_prefix='CA1'
+        )
+        cls.owner = CustomUser.objects.create_user(
+            'csv_acc_owner', password='pass', role='owner', dormitory=cls.dorm_a
+        )
+        BillingSettings.objects.create(
+            dormitory=cls.dorm_a, bill_day=1, grace_days=5, elec_rate=7, water_rate=18
+        )
+
+        building_a = Building.objects.create(dormitory=cls.dorm_a, name='CA Bldg')
+        floor_a = Floor.objects.create(building=building_a, number=1)
+        cls.room1 = Room.objects.create(floor=floor_a, number='CA101', base_rent=5000)
+        cls.room2 = Room.objects.create(floor=floor_a, number='CA102', base_rent=4000)
+
+        # สร้าง 3 bills ในเดือน 2025-06 (เพื่อนับ row count)
+        cls.bill1 = Bill.objects.create(
+            room=cls.room1, month=date(2025, 6, 1), base_rent=5000,
+            total=5500, due_date=date(2025, 6, 6), status='paid',
+            invoice_number='CA1-2506-001',
+        )
+        cls.bill2 = Bill.objects.create(
+            room=cls.room2, month=date(2025, 6, 1), base_rent=4000,
+            total=4200, due_date=date(2025, 6, 6), status='paid',
+            invoice_number='CA1-2506-002',
+        )
+        cls.bill3 = Bill.objects.create(
+            room=cls.room1, month=date(2025, 7, 1), base_rent=5000,
+            total=5100, due_date=date(2025, 7, 6), status='sent',
+            invoice_number='CA1-2507-001',
+        )
+
+        # Add payment for bill1 (for totals test)
+        from apps.billing.models import Payment
+        Payment.objects.create(
+            bill=cls.bill1,
+            amount=5500,
+            tmr_ref='TXN-CA1',
+            idempotency_key='TXN-CA1',
+            paid_at=timezone.now(),
+        )
+        Payment.objects.create(
+            bill=cls.bill2,
+            amount=4200,
+            tmr_ref='TXN-CA2',
+            idempotency_key='TXN-CA2',
+            paid_at=timezone.now(),
+        )
+
+        # Dormitory B — ไม่ควรอยู่ใน export ของ dorm_a
+        cls.dorm_b = Dormitory.objects.create(
+            name='CSV Acc Dorm B', address='Addr B', invoice_prefix='CB1'
+        )
+        building_b = Building.objects.create(dormitory=cls.dorm_b, name='CB Bldg')
+        floor_b = Floor.objects.create(building=building_b, number=1)
+        room_b = Room.objects.create(floor=floor_b, number='CB101', base_rent=6000)
+        Bill.objects.create(
+            room=room_b, month=date(2025, 6, 1), base_rent=6000,
+            total=6000, due_date=date(2025, 6, 6), status='sent',
+            invoice_number='CB1-2506-001',
+        )
+
+    def _get_csv_rows(self, params):
+        """Helper: GET CSV export, strip BOM, return list of rows"""
+        resp = self.client.get(reverse('billing:export'), params)
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode('utf-8').lstrip('\ufeff')
+        import io, csv as csv_mod
+        reader = csv_mod.reader(io.StringIO(content))
+        return list(reader)
+
+    def setUp(self):
+        self.client.force_login(self.owner)
+
+    def test_csv_row_count_matches_bills(self):
+        """export CSV สำหรับ month 2025-06 → จำนวน rows = จำนวน bills ในเดือนนั้น (ไม่นับ header)"""
+        from apps.billing.models import Bill
+        expected_count = Bill.objects.filter(
+            room__floor__building__dormitory=self.dorm_a,
+            month__year=2025, month__month=6,
+        ).count()
+
+        rows = self._get_csv_rows({'start_month': '2025-06', 'end_month': '2025-06'})
+        data_rows = rows[1:]  # ข้าม header
+        self.assertEqual(len(data_rows), expected_count)
+
+    def test_csv_contains_invoice_number(self):
+        """invoice_number ปรากฏใน CSV content"""
+        rows = self._get_csv_rows({'start_month': '2025-06', 'end_month': '2025-06'})
+        all_invoice_numbers = [r[0] for r in rows[1:]]
+        self.assertIn('CA1-2506-001', all_invoice_numbers)
+        self.assertIn('CA1-2506-002', all_invoice_numbers)
+
+    def test_csv_totals_match_paid_bills(self):
+        """sum ของ total ใน CSV (paid bills) = ยอดรวม paid ของ dorm_a เดือน 2025-06"""
+        from decimal import Decimal
+        from apps.billing.models import Bill
+
+        expected_paid_total = sum(
+            b.total for b in Bill.objects.filter(
+                room__floor__building__dormitory=self.dorm_a,
+                month__year=2025, month__month=6,
+                status='paid',
+            )
+        )
+
+        rows = self._get_csv_rows({'start_month': '2025-06', 'end_month': '2025-06'})
+        # column index 9 = Total
+        paid_rows = [r for r in rows[1:] if r[10] == 'Paid']
+        csv_paid_total = sum(Decimal(r[9]) for r in paid_rows)
+        self.assertEqual(csv_paid_total, expected_paid_total)
+
+    def test_csv_scoped_to_active_dormitory(self):
+        """owner dorm_a export CSV → ไม่มีข้อมูลของ dorm_b"""
+        rows = self._get_csv_rows({'start_month': '2025-06', 'end_month': '2025-06'})
+        invoice_numbers = [r[0] for r in rows[1:]]
+        for inv in invoice_numbers:
+            self.assertFalse(
+                inv.startswith('CB1'),
+                f'Found dorm_b bill in CSV export: {inv}'
+            )
