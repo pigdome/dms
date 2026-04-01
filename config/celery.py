@@ -24,4 +24,14 @@ app.conf.beat_schedule = {
         'task': 'apps.billing.tasks.check_dunning_task',
         'schedule': crontab(hour=9, minute=0),
     },
+    # P1-1: Run at 08:00 every day; checks for leases expiring in 30/7 days
+    'check-lease-expiry': {
+        'task': 'apps.notifications.tasks.check_lease_expiry_task',
+        'schedule': crontab(hour=8, minute=0),
+    },
+    # P1-2: Run at 02:00 every day; PDPA auto-purge 90 days after lease end
+    'pdpa-auto-purge': {
+        'task': 'apps.notifications.tasks.pdpa_auto_purge_task',
+        'schedule': crontab(hour=2, minute=0),
+    },
 }

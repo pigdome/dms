@@ -482,3 +482,402 @@ class TMRWebhookNotificationTests(TestCase):
         self.assertEqual(bill.status, 'paid')
         mock_receipt.assert_called_once_with(bill.pk)
         mock_owner.assert_called_once_with(bill.pk)
+
+
+# ---------------------------------------------------------------------------
+# P1-1: Lease Expiry Warning tests
+# ---------------------------------------------------------------------------
+
+
+class PushLeaseExpiryTenantTests(SimpleTestCase):
+    """push_lease_expiry_tenant() — LINE message to tenant about expiring lease."""
+
+    def test_sends_message_with_line_id(self):
+        profile = MagicMock()
+        profile.line_id = 'Utenant_expiry'
+        lease = MagicMock()
+        lease.room.number = '301'
+        lease.end_date = MagicMock()
+        lease.end_date.strftime.return_value = '01/05/2026'
+
+        with patch('apps.notifications.line.push_text', return_value=True) as mock_push:
+            from apps.notifications.line import push_lease_expiry_tenant
+            result = push_lease_expiry_tenant(profile, lease, 30)
+
+        self.assertTrue(result)
+        mock_push.assert_called_once()
+        text = mock_push.call_args[0][1]
+        self.assertIn('301', text)
+        self.assertIn('30 days', text)
+        self.assertNotIn('URGENT', text)
+
+    def test_includes_urgent_for_7_days(self):
+        profile = MagicMock()
+        profile.line_id = 'Utenant_expiry'
+        lease = MagicMock()
+        lease.room.number = '301'
+        lease.end_date = MagicMock()
+        lease.end_date.strftime.return_value = '01/05/2026'
+
+        with patch('apps.notifications.line.push_text', return_value=True) as mock_push:
+            from apps.notifications.line import push_lease_expiry_tenant
+            result = push_lease_expiry_tenant(profile, lease, 7)
+
+        self.assertTrue(result)
+        text = mock_push.call_args[0][1]
+        self.assertIn('URGENT', text)
+        self.assertIn('7 days', text)
+
+    def test_skips_when_no_line_id(self):
+        profile = MagicMock()
+        profile.line_id = ''
+        lease = MagicMock()
+
+        with patch('apps.notifications.line.push_text') as mock_push:
+            from apps.notifications.line import push_lease_expiry_tenant
+            result = push_lease_expiry_tenant(profile, lease, 30)
+
+        self.assertFalse(result)
+        mock_push.assert_not_called()
+
+
+class PushLeaseExpiryOwnerTests(SimpleTestCase):
+    """push_lease_expiry_owner() — LINE message to owner about expiring lease."""
+
+    def test_sends_message_to_owner(self):
+        owner = MagicMock()
+        owner.line_user_id = 'Uowner_expiry'
+        lease = MagicMock()
+        lease.room.number = '401'
+        lease.tenant.full_name = 'John Doe'
+        lease.end_date = MagicMock()
+        lease.end_date.strftime.return_value = '15/04/2026'
+
+        with patch('apps.notifications.line.push_text', return_value=True) as mock_push:
+            from apps.notifications.line import push_lease_expiry_owner
+            result = push_lease_expiry_owner(owner, lease, 7)
+
+        self.assertTrue(result)
+        mock_push.assert_called_once()
+        text = mock_push.call_args[0][1]
+        self.assertIn('401', text)
+        self.assertIn('John Doe', text)
+        self.assertIn('7 days', text)
+
+    def test_skips_owner_without_line_user_id(self):
+        owner = MagicMock()
+        owner.line_user_id = ''
+        lease = MagicMock()
+
+        with patch('apps.notifications.line.push_text') as mock_push:
+            from apps.notifications.line import push_lease_expiry_owner
+            result = push_lease_expiry_owner(owner, lease, 30)
+
+        self.assertFalse(result)
+        mock_push.assert_not_called()
+
+
+class CheckLeaseExpiryTaskTests(TestCase):
+    """Integration tests for check_lease_expiry_task()."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory, CustomUser
+        from apps.rooms.models import Building, Floor, Room
+
+        cls.dorm = Dormitory.objects.create(name='Expiry Dorm', address='Addr')
+        building = Building.objects.create(dormitory=cls.dorm, name='A')
+        floor = Floor.objects.create(building=building, number=1, dormitory=cls.dorm)
+        cls.room = Room.objects.create(
+            floor=floor, number='101', base_rent=5000, dormitory=cls.dorm
+        )
+
+        # Owner with LINE user ID
+        cls.owner = CustomUser.objects.create_user(
+            'expiry_owner', password='pass', role='owner',
+            dormitory=cls.dorm,
+        )
+        cls.owner.line_user_id = 'Uowner_exp'
+        cls.owner.save()
+
+        # Tenant with LINE ID
+        cls.tenant_user = CustomUser.objects.create_user(
+            'expiry_tenant', password='pass', role='tenant',
+            dormitory=cls.dorm,
+        )
+
+    def _make_tenant_and_lease(self, end_date, line_id='Utenant_exp', status='active'):
+        from apps.core.models import CustomUser
+        from apps.tenants.models import TenantProfile, Lease
+        from apps.core.threadlocal import dormitory_context
+
+        with dormitory_context(self.dorm):
+            user = CustomUser.objects.create_user(
+                f'exp_t_{end_date}_{id(self)}', password='pass',
+                role='tenant', dormitory=self.dorm,
+            )
+            profile = TenantProfile.objects.create(
+                user=user, room=self.room, line_id=line_id,
+            )
+            lease = Lease.objects.create(
+                tenant=profile, room=self.room, status=status,
+                start_date=end_date.replace(year=end_date.year - 1),
+                end_date=end_date,
+            )
+        return profile, lease
+
+    def test_sends_notification_for_30_day_expiry(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from apps.core.models import ActivityLog, CustomUser
+
+        target = timezone.now().date() + timedelta(days=30)
+        profile, lease = self._make_tenant_and_lease(target)
+
+        with patch('apps.notifications.line.push_text', return_value=True):
+            from apps.notifications.tasks import check_lease_expiry_task
+            check_lease_expiry_task()
+
+        # Check ActivityLog was created
+        log = ActivityLog.unscoped_objects.filter(
+            action='lease_expiry_30d',
+            record_id=str(lease.pk),
+        ).first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.detail['days_remaining'], 30)
+        self.assertTrue(log.detail['tenant_notified'])
+
+    def test_sends_notification_for_7_day_expiry(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from apps.core.models import ActivityLog, CustomUser
+
+        target = timezone.now().date() + timedelta(days=7)
+        profile, lease = self._make_tenant_and_lease(target)
+
+        with patch('apps.notifications.line.push_text', return_value=True):
+            from apps.notifications.tasks import check_lease_expiry_task
+            check_lease_expiry_task()
+
+        log = ActivityLog.unscoped_objects.filter(
+            action='lease_expiry_7d',
+            record_id=str(lease.pk),
+        ).first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.detail['days_remaining'], 7)
+
+    def test_does_not_duplicate_notification(self):
+        """Running the task twice should not send duplicate notifications."""
+        from datetime import timedelta
+        from django.utils import timezone
+        from apps.core.models import ActivityLog
+
+        target = timezone.now().date() + timedelta(days=30)
+        profile, lease = self._make_tenant_and_lease(target)
+
+        with patch('apps.notifications.line.push_text', return_value=True) as mock_push:
+            from apps.notifications.tasks import check_lease_expiry_task
+            check_lease_expiry_task()
+            call_count_first = mock_push.call_count
+
+            check_lease_expiry_task()
+            call_count_second = mock_push.call_count
+
+        # Second run should not add more calls
+        self.assertEqual(call_count_first, call_count_second)
+        logs = ActivityLog.unscoped_objects.filter(
+            action='lease_expiry_30d',
+            record_id=str(lease.pk),
+        )
+        self.assertEqual(logs.count(), 1)
+
+    def test_skips_ended_leases(self):
+        """Ended leases should not trigger expiry warnings."""
+        from datetime import timedelta
+        from django.utils import timezone
+        from apps.core.models import ActivityLog
+
+        target = timezone.now().date() + timedelta(days=30)
+        profile, lease = self._make_tenant_and_lease(target, status='ended')
+
+        with patch('apps.notifications.line.push_text', return_value=True):
+            from apps.notifications.tasks import check_lease_expiry_task
+            check_lease_expiry_task()
+
+        logs = ActivityLog.unscoped_objects.filter(
+            action='lease_expiry_30d',
+            record_id=str(lease.pk),
+        )
+        self.assertEqual(logs.count(), 0)
+
+    def test_skips_leases_with_no_end_date(self):
+        """Leases without end_date should not match."""
+        from apps.tenants.models import TenantProfile, Lease
+        from apps.core.threadlocal import dormitory_context
+        from apps.core.models import ActivityLog, CustomUser
+
+        with dormitory_context(self.dorm):
+            user = CustomUser.objects.create_user(
+                'exp_noend', password='pass', role='tenant', dormitory=self.dorm,
+            )
+            profile = TenantProfile.objects.create(user=user, room=self.room, line_id='Ux')
+            lease = Lease.objects.create(
+                tenant=profile, room=self.room, status='active',
+                start_date='2025-01-01', end_date=None,
+            )
+
+        with patch('apps.notifications.line.push_text', return_value=True):
+            from apps.notifications.tasks import check_lease_expiry_task
+            check_lease_expiry_task()
+
+        logs = ActivityLog.unscoped_objects.filter(record_id=str(lease.pk))
+        self.assertEqual(logs.count(), 0)
+
+
+# ---------------------------------------------------------------------------
+# P1-2: PDPA Auto-Purge Task tests
+# ---------------------------------------------------------------------------
+
+
+class PDPAAutoPurgeTaskTests(TestCase):
+    """Integration tests for pdpa_auto_purge_task()."""
+
+    def _setup_dorm_and_room(self):
+        from apps.core.models import Dormitory
+        from apps.rooms.models import Building, Floor, Room
+
+        dorm = Dormitory.objects.create(name='Purge Dorm', address='Addr')
+        building = Building.objects.create(dormitory=dorm, name='B')
+        floor = Floor.objects.create(building=building, number=1, dormitory=dorm)
+        room = Room.objects.create(
+            floor=floor, number='201', base_rent=3000, dormitory=dorm
+        )
+        return dorm, room
+
+    def _make_tenant_with_ended_lease(self, dorm, room, end_date, phone='0899999999'):
+        from apps.core.models import CustomUser
+        from apps.tenants.models import TenantProfile, Lease
+        from apps.core.threadlocal import dormitory_context
+
+        with dormitory_context(dorm):
+            user = CustomUser.objects.create_user(
+                f'purge_t_{end_date}_{id(self)}_{phone}', password='pass',
+                role='tenant', dormitory=dorm,
+            )
+            profile = TenantProfile.objects.create(
+                user=user, room=room, phone=phone,
+                line_id='Lpurge', id_card_no='1234567890123',
+            )
+            Lease.objects.create(
+                tenant=profile, room=room, status='ended',
+                start_date=end_date.replace(year=end_date.year - 1),
+                end_date=end_date,
+            )
+        return profile
+
+    def test_purges_tenant_after_90_days(self):
+        """Tenant with ended lease > 90 days ago should be anonymized."""
+        from datetime import timedelta
+        from django.utils import timezone
+
+        dorm, room = self._setup_dorm_and_room()
+        end_date = timezone.now().date() - timedelta(days=91)
+        profile = self._make_tenant_with_ended_lease(dorm, room, end_date)
+
+        from apps.notifications.tasks import pdpa_auto_purge_task
+        count = pdpa_auto_purge_task()
+
+        self.assertEqual(count, 1)
+        profile.refresh_from_db()
+        self.assertTrue(profile.is_deleted)
+        self.assertEqual(profile.phone, '')
+        self.assertEqual(profile.id_card_no, '[REDACTED]')
+        self.assertIsNotNone(profile.anonymized_at)
+
+    def test_does_not_purge_within_90_days(self):
+        """Tenant with ended lease < 90 days ago should NOT be anonymized."""
+        from datetime import timedelta
+        from django.utils import timezone
+
+        dorm, room = self._setup_dorm_and_room()
+        end_date = timezone.now().date() - timedelta(days=89)
+        profile = self._make_tenant_with_ended_lease(dorm, room, end_date)
+
+        from apps.notifications.tasks import pdpa_auto_purge_task
+        count = pdpa_auto_purge_task()
+
+        self.assertEqual(count, 0)
+        profile.refresh_from_db()
+        self.assertFalse(profile.is_deleted)
+        self.assertEqual(profile.phone, '0899999999')
+
+    def test_does_not_purge_active_lease(self):
+        """Tenant with an active lease should never be purged."""
+        from datetime import timedelta
+        from django.utils import timezone
+        from apps.core.models import CustomUser
+        from apps.tenants.models import TenantProfile, Lease
+        from apps.core.threadlocal import dormitory_context
+
+        dorm, room = self._setup_dorm_and_room()
+        end_date = timezone.now().date() - timedelta(days=91)
+
+        with dormitory_context(dorm):
+            user = CustomUser.objects.create_user(
+                'purge_active', password='pass', role='tenant', dormitory=dorm,
+            )
+            profile = TenantProfile.objects.create(
+                user=user, room=room, phone='0888888888',
+                line_id='Lactive', id_card_no='9876543210123',
+            )
+            # One ended lease (old)
+            Lease.objects.create(
+                tenant=profile, room=room, status='ended',
+                start_date='2024-01-01', end_date=end_date,
+            )
+            # One active lease (current)
+            Lease.objects.create(
+                tenant=profile, room=room, status='active',
+                start_date='2025-06-01', end_date=None,
+            )
+
+        from apps.notifications.tasks import pdpa_auto_purge_task
+        count = pdpa_auto_purge_task()
+
+        self.assertEqual(count, 0)
+        profile.refresh_from_db()
+        self.assertFalse(profile.is_deleted)
+
+    def test_does_not_re_purge_already_anonymized(self):
+        """Already anonymized profiles should be skipped."""
+        from datetime import timedelta
+        from django.utils import timezone
+
+        dorm, room = self._setup_dorm_and_room()
+        end_date = timezone.now().date() - timedelta(days=91)
+        profile = self._make_tenant_with_ended_lease(dorm, room, end_date, phone='0877777777')
+
+        # Anonymize first
+        profile.anonymize()
+
+        from apps.notifications.tasks import pdpa_auto_purge_task
+        count = pdpa_auto_purge_task()
+
+        # Should not process again
+        self.assertEqual(count, 0)
+
+    def test_purges_exactly_at_90_days(self):
+        """Tenant with ended lease exactly 90 days ago should be purged."""
+        from datetime import timedelta
+        from django.utils import timezone
+
+        dorm, room = self._setup_dorm_and_room()
+        end_date = timezone.now().date() - timedelta(days=90)
+        profile = self._make_tenant_with_ended_lease(dorm, room, end_date, phone='0866666666')
+
+        from apps.notifications.tasks import pdpa_auto_purge_task
+        count = pdpa_auto_purge_task()
+
+        self.assertEqual(count, 1)
+        profile.refresh_from_db()
+        self.assertTrue(profile.is_deleted)

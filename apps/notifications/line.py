@@ -218,3 +218,53 @@ def push_broadcast(broadcast) -> int:
         if profile.line_id and push_text(profile.line_id, text):
             sent += 1
     return sent
+
+
+def push_lease_expiry_tenant(tenant_profile, lease, days_remaining: int) -> bool:
+    """
+    Notify a tenant that their lease is expiring soon.
+    Called by the check_lease_expiry_task for 30-day and 7-day warnings.
+    """
+    line_id = tenant_profile.line_id
+    if not line_id:
+        return False
+
+    room_number = lease.room.number if lease.room else '-'
+    end_date = lease.end_date.strftime('%d/%m/%Y') if lease.end_date else '-'
+
+    if days_remaining <= 7:
+        urgency = 'URGENT'
+    else:
+        urgency = ''
+
+    text = (
+        f'{"[" + urgency + "] " if urgency else ""}'
+        f'Lease Expiry Notice / แจ้งเตือนสัญญาใกล้หมด\n'
+        f'Room {room_number}\n'
+        f'End date: {end_date} (in {days_remaining} days)\n'
+        f'Please contact the office to renew your lease.'
+    )
+    return push_text(line_id, text)
+
+
+def push_lease_expiry_owner(owner_user, lease, days_remaining: int) -> bool:
+    """
+    Notify an owner that a tenant's lease is expiring soon.
+    Uses the owner's line_user_id field (not line_id).
+    """
+    line_user_id = owner_user.line_user_id
+    if not line_user_id:
+        return False
+
+    room_number = lease.room.number if lease.room else '-'
+    tenant_name = lease.tenant.full_name if lease.tenant else '-'
+    end_date = lease.end_date.strftime('%d/%m/%Y') if lease.end_date else '-'
+
+    text = (
+        f'Lease Expiry Alert\n'
+        f'Tenant: {tenant_name}\n'
+        f'Room {room_number}\n'
+        f'End date: {end_date} (in {days_remaining} days)\n'
+        f'Action needed: renew or prepare vacancy.'
+    )
+    return push_text(line_user_id, text)

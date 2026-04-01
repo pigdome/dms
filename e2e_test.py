@@ -8,7 +8,7 @@ BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 
 os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
-# Owner / Staff URLs — basic smoke test (no errors)
+# Owner URLs — basic smoke test (no errors)
 OWNER_URLS = [
     "/",
     "/dashboard/",
@@ -17,7 +17,7 @@ OWNER_URLS = [
     "/rooms/meter-reading/",
     "/tenants/",
     "/tenants/add/",
-    "/tenants/import/",
+    "/import/tenants/",
     "/maintenance/",
     "/maintenance/create/",
     "/notifications/parcels/",
@@ -26,6 +26,23 @@ OWNER_URLS = [
     "/billing/",
     "/billing/settings/",
     "/setup/",
+]
+
+# Staff URLs — excludes owner-only pages (billing/settings, setup, import)
+STAFF_URLS = [
+    "/",
+    "/dashboard/",
+    "/rooms/",
+    "/rooms/create/",
+    "/rooms/meter-reading/",
+    "/tenants/",
+    "/tenants/add/",
+    "/maintenance/",
+    "/maintenance/create/",
+    "/notifications/parcels/",
+    "/notifications/parcels/history/",
+    "/notifications/broadcast/",
+    "/billing/",
 ]
 
 # Tenant-only URLs
@@ -401,7 +418,7 @@ def run_tests():
         # ----------------------------------------------------------------
         for username, password, urls in [
             ("owner1",    "test1234", OWNER_URLS),
-            ("staff1",    "test1234", OWNER_URLS),
+            ("staff1",    "test1234", STAFF_URLS),
             ("tenant101", "test1234", TENANT_URLS),
         ]:
             print(f"\n=== Smoke testing as {username} ===")
