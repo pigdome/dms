@@ -2,7 +2,7 @@ from django.urls import path
 from apps.core.views import (
     landing_view, login_view, logout_view, SetupWizardView,
     property_switch_view, theme_toggle_view, AuditLogView,
-    ImportRoomsView, ImportTenantsView,
+    ImportRoomsView, ImportTenantsView, health_check,
 )
 
 app_name = 'core'
@@ -20,4 +20,7 @@ urlpatterns = [
     # Data Import Wizard
     path('import/rooms/', ImportRoomsView.as_view(), name='import_rooms'),
     path('import/tenants/', ImportTenantsView.as_view(), name='import_tenants'),
+
+    # B8: Health check endpoint สำหรับ Docker/Nginx healthcheck
+    path('health/', health_check, name='health_check'),
 ]

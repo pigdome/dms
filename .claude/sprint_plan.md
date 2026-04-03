@@ -204,3 +204,149 @@ Before CC signs, the following must be answered (assigning to @agent-marketing):
 | Sprint 2 delivery | 2026-04-27 | DONE 2026-03-31 (27 days ahead of schedule) |
 | Sprint 3 delivery | 2026-05-11 | DONE 2026-03-31 (41 days ahead of schedule) |
 | Total test coverage | Comprehensive | 263 tests, all passing |
+
+---
+
+## Sprint 7: "Production Readiness + Security" (2026-04-02 to 2026-04-16)
+
+**Status: COMPLETED (ยืนยัน 2026-04-03)**
+**Goal:** แก้ production blockers ทั้งหมดก่อน deploy + เพิ่ม security/feature สำคัญ
+**Test Results:** 362 unit tests + 78 E2E tests -- ALL PASS
+
+> Note: Sprint 4–6 ไม่ได้บันทึกใน file นี้ — ดู git log (v0.4.0, v0.5.0, v0.6.0)
+
+---
+
+### Phase 0 — Production Blockers (แก้ก่อน deploy ทุกอย่าง)
+
+#### B1. Webhook Race Condition 🔴 BLOCKER
+- **File:** `apps/billing/views.py` ~183-191
+- **ปัญหา:** `select_for_update()` อยู่นอก `atomic()` → concurrent webhooks ผ่าน idempotency check พร้อมกัน → duplicate payment
+- **Fix:** ย้าย `select_for_update()` ให้อยู่ใน `atomic()` block เดียวกัน
+- **Estimate:** 0.5 วัน
+
+#### B2. TMR Webhook Signature Bypass 🔴 BLOCKER
+- **File:** `apps/billing/views.py` ~159-164
+- **ปัญหา:** `if secret:` — ถ้า `TMR_WEBHOOK_SECRET` ว่างจะข้าม HMAC verify ทั้งหมด → ใครก็ POST มาเพื่อมาร์คบิลว่าจ่ายแล้วได้
+- **Fix:** ถ้าไม่มี secret ให้ reject ทันที (400/403)
+- **Estimate:** 0.5 วัน
+
+#### B3. TMR API Key Leaked ไปหา Tenant 🔴 BLOCKER
+- **File:** `apps/tenants/views.py` ~339-340
+- **ปัญหา:** `tmr_api_key` โผล่ใน URL ที่ tenant เห็นได้
+- **Fix:** Generate QR server-side หรือใช้ public merchant ID แทน
+- **Estimate:** 1 วัน
+
+#### B4. Django Security Settings ขาดหมด 🔴 BLOCKER
+- **File:** `config/settings.py`
+- **ปัญหา:** ไม่มี `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_CONTENT_TYPE_NOSNIFF`
+- **Fix:** เพิ่ม security settings ทั้งหมด toggle ด้วย env var
+- **Estimate:** 0.5 วัน
+
+#### B5. Media Files 404 ใน Production 🔴 BLOCKER
+- **File:** `config/urls.py` ~81-82
+- **ปัญหา:** `if settings.DEBUG: urlpatterns += static(...)` → ปิด DEBUG แล้วรูปทุกอย่าง 404
+- **Fix:** เพิ่ม Nginx config ใน docker-compose สำหรับ serve media files
+- **Estimate:** 1 วัน
+
+#### B6. Docker Production Config ไม่มี 🔴 BLOCKER
+- **File:** `docker-compose.yml`
+- **ปัญหา:** ไม่มี `restart: unless-stopped`, healthcheck, มี `--reload`, mount source code, ไม่รัน `collectstatic`
+- **Fix:** สร้าง `docker-compose.prod.yml` + Nginx service + fix Dockerfile
+- **Estimate:** 1 วัน
+
+#### B7. ไม่มี Logging และ Error Tracking 🔴 BLOCKER
+- **File:** `config/settings.py`
+- **ปัญหา:** ไม่มี `LOGGING` config, ไม่มี Sentry → production error เงียบหมด
+- **Fix:** เพิ่ม `LOGGING` dict + integrate `sentry-sdk`
+- **Estimate:** 0.5 วัน
+
+#### B8. ไม่มี Health Check Endpoint 🔴 BLOCKER
+- **ปัญหา:** Container orchestrator ไม่รู้ว่า app พร้อมหรือเปล่า
+- **Fix:** เพิ่ม `/health/` endpoint ใน `core/urls.py`
+- **Estimate:** 0.5 วัน
+
+**Phase 0 รวม: ~6 วัน**
+
+---
+
+### Phase 1 — Important Issues (แก้ใน Sprint นี้)
+
+#### I1. id_card_no Encryption at Rest (PDPA) 🟡
+- **ปัญหา:** `TenantProfile.id_card_no` เป็น `CharField` ธรรมดา ยังไม่ encrypt จริง
+- **Fix:** `django-encrypted-model-fields` (AES-256) + `id_card_hash` (HMAC-SHA256) สำหรับ query + data migration
+- **Estimate:** 1.5 วัน
+
+#### I2. Staff Permission Granularity 🟡
+- **ปัญหา:** Staff มีสิทธิ์เหมือนกัน ไม่สามารถแยกย่อยได้
+- **Fix:** `StaffPermission` model + UI checkbox matrix
+- **Permissions:** `can_view_billing`, `can_record_meter`, `can_manage_maintenance`, `can_log_parcels`, `can_view_tenants`
+- **Estimate:** 2 วัน
+
+#### I3. Pro-rated Rent ไม่ถูก Apply 🟡
+- **File:** `apps/billing/services.py` ~98
+- **ปัญหา:** `generate_bills_for_dormitory()` ใช้ `room.base_rent` ตรงๆ — `calculate_prorated_rent()` มีแต่ไม่ถูกเรียก
+- **Fix:** เรียก `calculate_prorated_rent()` เมื่อ lease start date อยู่ในเดือนปัจจุบัน
+- **Estimate:** 0.5 วัน
+
+#### I4. Webhook Amount Validation 🟡
+- **File:** `apps/billing/views.py` ~194
+- **ปัญหา:** `amount=data.get('amount', bill.total)` ไม่ validate ว่าตรงกับ bill
+- **Fix:** validate amount + log warning ถ้าไม่ตรง
+- **Estimate:** 0.5 วัน
+
+#### I5. Default Password = Username 🟡
+- **File:** `apps/tenants/views.py` ~118, `apps/core/views.py` ~873
+- **Fix:** Force password change on first login หรือ generate random + ส่งผ่าน LINE
+- **Estimate:** 0.5 วัน
+
+#### I6. Database Indexes 🟡
+- **Fields:** `Bill.status`, `Bill.month`, `Bill.due_date`, `Room.status`, `Lease.status`, `Lease.end_date`, `TenantProfile.is_deleted`
+- **Estimate:** 0.5 วัน
+
+#### I7. Celery Task Retry Config ไม่ครบ 🟡
+- **File:** `apps/notifications/tasks.py` ~269, ~381
+- **ปัญหา:** `check_lease_expiry_task` และ `pdpa_auto_purge_task` ไม่มี retry config
+- **Fix:** เพิ่ม `bind=True, max_retries=3`
+- **Estimate:** 0.5 วัน
+
+#### I8. Tests ใช้ SQLite แทน PostgreSQL 🟡
+- **File:** `config/settings.py` ~88-92
+- **ปัญหา:** `select_for_update`, UUID, JSON queries ทำงานต่างกัน → bug B1 จะไม่โดน catch
+- **Fix:** ใช้ PostgreSQL test DB (`pytest-django` + `--reuse-db`)
+- **Estimate:** 0.5 วัน
+
+#### I9. Broadcast Preview 🟡
+- **ปัญหา:** กด Send แล้วส่งทันที ไม่มี preview ก่อน
+- **Fix:** เพิ่ม Preview step ก่อน Confirm
+- **Estimate:** 1 วัน
+
+**Phase 1 รวม: ~7.5 วัน**
+
+---
+
+### Phase 2 — Defer to Sprint 8
+
+| # | Issue |
+|---|---|
+| N1 | OCR สแกนบัตรประชาชน (GLM-OCR) — ต้อง assess library ก่อน |
+| N2 | Custom 404/500 error pages |
+| N3 | Password change self-service ใน tenant portal |
+| N4 | Invoice number sequence — retry logic กันชนกัน |
+| N5 | Dashboard query optimization / caching |
+| N6 | Broadcast preview LINE message format |
+
+---
+
+### Sprint 7 Success Metrics
+
+| Metric | Target | Actual |
+|--------|--------|--------|
+| Production blockers | B1-B8 ทั้งหมด DONE ก่อน deploy | ALL DONE |
+| Security fixes | Webhook signature, API key leak, Django security settings | ALL DONE |
+| PDPA | id_card_no encrypted at rest | DONE (AES-256 + HMAC) |
+| Staff permissions | Granular permission matrix | DONE (StaffPermission model) |
+| Test DB | Switch to PostgreSQL (race condition coverage) | DONE (362 tests on PG) |
+| Pro-rate billing | Fix generate_bills to call calculate_prorated_rent | DONE |
+| Celery retry | Add retry config to all tasks | DONE |
+| Tests | All pass | 362 unit + 78 E2E = ALL PASS |

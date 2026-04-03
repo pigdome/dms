@@ -36,6 +36,9 @@ def robots_txt(request):
 
 sitemaps = {'static': StaticViewSitemap}
 
+handler404 = 'apps.core.views.custom_404'
+handler500 = 'apps.core.views.custom_500'
+
 urlpatterns = [
     path('admin/', admin.site.urls),
 
@@ -46,7 +49,7 @@ urlpatterns = [
     # Root → dashboard or login
     path('', root_redirect, name='home'),
 
-    # Auth
+    # Auth + Health check
     path('', include('apps.core.urls')),
 
     # Dashboard

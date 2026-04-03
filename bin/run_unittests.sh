@@ -19,12 +19,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# ─── Activate venv ───────────────────────────────────────────────────────────
-if [ ! -f "$PROJECT_ROOT/venv/bin/activate" ]; then
-    err "Virtual environment not found at $PROJECT_ROOT/venv"
+# ─── Check Docker container ──────────────────────────────────────────────────
+if ! docker compose ps web --status running 2>/dev/null | grep -q "web"; then
+    err "Docker container 'web' is not running. Start it with: docker compose up -d"
     exit 1
 fi
-source "$PROJECT_ROOT/venv/bin/activate"
 
 # ─── Default test labels (all apps) ──────────────────────────────────────────
 DEFAULT_APPS=(
@@ -47,11 +46,11 @@ echo ""
 echo -e "${CYAN}══════════════════════════════════════════════════════════${NC}"
 echo -e "${CYAN}   DMS Unit Tests${NC}"
 echo -e "${CYAN}══════════════════════════════════════════════════════════${NC}"
-info "Running: python manage.py test ${TEST_TARGETS[*]} --no-input"
+info "Running: docker compose exec web python manage.py test ${TEST_TARGETS[*]} --no-input"
 echo ""
 
 set +e
-python manage.py test "${TEST_TARGETS[@]}" --no-input
+docker compose exec web python manage.py test "${TEST_TARGETS[@]}" --no-input
 EXIT_CODE=$?
 set -e
 

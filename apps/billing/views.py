@@ -2,6 +2,7 @@ import csv
 import hashlib
 import hmac
 import json
+import logging
 
 from django.conf import settings as django_settings
 from django.contrib import messages
@@ -16,7 +17,9 @@ from django.views.decorators.http import require_POST
 from apps.billing.models import Bill, BillingSettings, Payment
 from apps.core.models import ActivityLog
 
-from apps.core.mixins import OwnerRequiredMixin, StaffRequiredMixin
+logger = logging.getLogger(__name__)
+
+from apps.core.mixins import OwnerRequiredMixin, StaffRequiredMixin, StaffPermissionRequiredMixin
 
 
 class BillingSettingsView(OwnerRequiredMixin, View):
@@ -68,8 +71,9 @@ class BillingSettingsView(OwnerRequiredMixin, View):
         })
 
 
-class BillListView(StaffRequiredMixin, View):
-    """รายการ Bills — owner/superadmin/staff เข้าได้"""
+class BillListView(StaffPermissionRequiredMixin, View):
+    """รายการ Bills — owner/superadmin ผ่านทันที, staff ต้องมี can_view_billing"""
+    permission_flag = 'can_view_billing'
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         if not dorm:
@@ -104,8 +108,9 @@ class BillListView(StaffRequiredMixin, View):
         })
 
 
-class BillDetailView(StaffRequiredMixin, View):
-    """รายละเอียด Bill — owner/superadmin/staff เข้าได้"""
+class BillDetailView(StaffPermissionRequiredMixin, View):
+    """รายละเอียด Bill — owner/superadmin ผ่านทันที, staff ต้องมี can_view_billing"""
+    permission_flag = 'can_view_billing'
     def get(self, request, pk):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         bill = get_object_or_404(
@@ -156,12 +161,16 @@ def tmr_webhook(request):
     body = request.body
 
     # --- Signature verification ---
+    # B2 fix: ถ้าไม่ได้ตั้ง TMR_WEBHOOK_SECRET ให้ reject ทันที
+    # ห้าม skip HMAC verify เพราะจะทำให้ใครก็ POST มา mark bill ว่าจ่ายแล้วได้
     secret = django_settings.TMR_WEBHOOK_SECRET
-    if secret:
-        sig = request.META.get('HTTP_X_TMR_SIGNATURE', '')
-        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(sig, expected):
-            return HttpResponse('Invalid signature', status=403)
+    if not secret:
+        return HttpResponse('Webhook secret not configured', status=400)
+
+    sig = request.META.get('HTTP_X_TMR_SIGNATURE', '')
+    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return HttpResponse('Invalid signature', status=403)
 
     try:
         data = json.loads(body)
@@ -175,20 +184,55 @@ def tmr_webhook(request):
     if not idempotency_key or not invoice_number:
         return HttpResponse('Missing ref or order_id', status=400)
 
-    # --- Idempotency check ---
-    if Payment.objects.filter(idempotency_key=idempotency_key).exists():
-        return JsonResponse({'status': 'already_processed'})
-
-    try:
-        bill = Bill.objects.select_for_update().get(invoice_number=invoice_number)
-    except Bill.DoesNotExist:
-        return HttpResponse('Bill not found', status=404)
-
-    if bill.status == Bill.Status.PAID:
-        return JsonResponse({'status': 'already_paid'})
-
+    # B1 fix: ครอบ idempotency check + select_for_update ทั้งหมดไว้ใน atomic() block
+    # เดิม select_for_update() อยู่นอก atomic() → concurrent webhooks ผ่าน idempotency
+    # check พร้อมกันได้ → duplicate payment record
     from django.db import transaction as db_transaction
     with db_transaction.atomic():
+        # --- Idempotency check (ต้องอยู่ใน atomic + select_for_update เพื่อป้องกัน race) ---
+        if Payment.objects.filter(idempotency_key=idempotency_key).exists():
+            return JsonResponse({'status': 'already_processed'})
+
+        try:
+            bill = Bill.objects.select_for_update().get(invoice_number=invoice_number)
+        except Bill.DoesNotExist:
+            return HttpResponse('Bill not found', status=404)
+
+        if bill.status == Bill.Status.PAID:
+            return JsonResponse({'status': 'already_paid'})
+
+        # I4: Validate ว่าจำนวนเงินจาก webhook ตรงกับยอดใน bill
+        # ถ้าไม่ตรงให้ log warning แต่ยังคง process ต่อไป (ไม่ reject)
+        # เนื่องจาก payment gateway อาจส่ง amount ที่ปัดเศษต่างกันเล็กน้อย
+        from decimal import Decimal as _Decimal
+        webhook_amount = data.get('amount')
+        if webhook_amount is not None:
+            try:
+                webhook_amount_dec = _Decimal(str(webhook_amount))
+                if webhook_amount_dec != bill.total:
+                    logger.warning(
+                        'Webhook amount mismatch: bill=%s invoice=%s '
+                        'expected=%s received=%s',
+                        bill.pk, bill.invoice_number, bill.total, webhook_amount_dec,
+                    )
+                    ActivityLog.objects.create(
+                        dormitory=bill.room.floor.building.dormitory,
+                        user=None,
+                        action='webhook_amount_mismatch',
+                        detail={
+                            'bill_id': str(bill.pk),
+                            'invoice': bill.invoice_number,
+                            'bill_total': str(bill.total),
+                            'webhook_amount': str(webhook_amount_dec),
+                        },
+                    )
+            except Exception:
+                # จำนวนเงินรูปแบบผิดพลาด — log warning แล้วใช้ bill.total แทน
+                logger.warning(
+                    'Webhook amount parse error: bill=%s value=%s',
+                    bill.pk, webhook_amount,
+                )
+
         Payment.objects.create(
             bill=bill,
             amount=data.get('amount', bill.total),
@@ -218,6 +262,70 @@ def tmr_webhook(request):
         pass  # Notification failure must not break payment processing
 
     return JsonResponse({'status': 'ok'})
+
+class BillQRRedirectView(View):
+    """
+    B3 fix: Server-side QR redirect endpoint — ไม่ expose tmr_api_key ใน client-facing URL
+    Tenant เรียก /billing/qr/<bill_id>/ → server ตรวจสิทธิ์ → redirect ไปยัง TMR URL จริง
+    tmr_api_key ไม่โผล่ใน HTML หรือ network tab ของ tenant
+    """
+
+    def get(self, request, bill_id):
+        from django.contrib.auth.mixins import LoginRequiredMixin
+        if not request.user.is_authenticated:
+            from django.contrib.auth.views import redirect_to_login
+            return redirect_to_login(request.get_full_path())
+
+        user = request.user
+
+        # ตรวจสิทธิ์: tenant เข้าได้เฉพาะบิลของตัวเอง, owner/staff เข้าได้ทุกบิลใน dormitory
+        if user.role == 'tenant':
+            try:
+                from apps.tenants.models import TenantProfile
+                profile = TenantProfile.objects.get(user=user)
+                bill = Bill.objects.get(
+                    pk=bill_id,
+                    room__leases__tenant=profile,
+                )
+            except (Bill.DoesNotExist, Exception):
+                return HttpResponse('Not found', status=404)
+        else:
+            dorm = getattr(request, 'active_dormitory', None) or user.dormitory
+            bill = get_object_or_404(
+                Bill, pk=bill_id, room__floor__building__dormitory=dorm
+            )
+
+        # ตรวจสถานะ: redirect เฉพาะบิลที่ยังไม่จ่าย
+        if bill.status not in (Bill.Status.SENT, Bill.Status.OVERDUE):
+            return HttpResponse('Payment not required', status=400)
+
+        try:
+            billing_settings = bill.room.floor.building.dormitory.billing_settings
+            if not billing_settings.tmr_api_key:
+                return HttpResponse('Payment not configured', status=400)
+            # สร้าง TMR URL ฝั่ง server — api_key ไม่ถูกส่งไปหา client เลย
+            tmr_url = f"https://payment.tmr.th/qr/{billing_settings.tmr_api_key}/{bill.invoice_number}"
+        except Exception:
+            return HttpResponse('Payment configuration error', status=500)
+
+        # BUG #1 fix: เปลี่ยนจาก redirect เป็น server-side proxy
+        # redirect(tmr_url) ส่ง Location header ไปยัง client ซึ่งมี tmr_api_key อยู่
+        # tenant สามารถเห็น api_key ได้จาก browser DevTools → Network tab
+        # แก้โดย fetch QR image ฝั่ง server แล้ว stream กลับไปให้ client โดยตรง
+        import urllib.request as _urllib_req
+        import urllib.error as _urllib_err
+        try:
+            with _urllib_req.urlopen(tmr_url, timeout=10) as resp:
+                content_type = resp.headers.get('Content-Type', 'image/png')
+                image_data = resp.read()
+            return HttpResponse(image_data, content_type=content_type)
+        except _urllib_err.HTTPError as exc:
+            logger.warning('TMR QR fetch HTTPError bill=%s status=%s', bill_id, exc.code)
+            return HttpResponse('Payment QR not available', status=502)
+        except Exception as exc:
+            logger.warning('TMR QR fetch failed bill=%s: %s', bill_id, exc)
+            return HttpResponse('Payment QR not available', status=502)
+
 
 class BillCSVExportView(OwnerRequiredMixin, View):
     """

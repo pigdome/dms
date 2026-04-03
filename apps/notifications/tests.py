@@ -456,10 +456,10 @@ class TMRWebhookNotificationTests(TestCase):
         )
         return bill
 
-    @override_settings(TMR_WEBHOOK_SECRET='')
+    @override_settings(TMR_WEBHOOK_SECRET='test-webhook-secret')
     def test_webhook_dispatches_receipt_and_owner_tasks(self):
         """After successful payment, webhook queues both notification tasks."""
-        import json
+        import json, hashlib, hmac as _hmac
         bill = self._create_test_bill()
 
         payload = json.dumps({
@@ -468,6 +468,7 @@ class TMRWebhookNotificationTests(TestCase):
             'amount': '5500.00',
             'tmr_ref': 'TMR-REF-001',
         })
+        sig = _hmac.new(b'test-webhook-secret', payload.encode(), hashlib.sha256).hexdigest()
 
         with patch('apps.notifications.tasks.send_payment_receipt_task.delay') as mock_receipt, \
              patch('apps.notifications.tasks.send_payment_owner_notification_task.delay') as mock_owner:
@@ -475,6 +476,7 @@ class TMRWebhookNotificationTests(TestCase):
                 '/billing/webhook/tmr/',
                 data=payload,
                 content_type='application/json',
+                HTTP_X_TMR_SIGNATURE=sig,
             )
 
         self.assertEqual(response.status_code, 200)
@@ -1069,6 +1071,10 @@ class ParcelLoggingIntegrationTests(TestCase):
 
         cls.staff_a = CustomUser.objects.create_user(
             'parcel_staff_a', password='pass', role='staff', dormitory=cls.dorm_a
+        )
+        from apps.core.models import StaffPermission
+        StaffPermission.objects.create(
+            user=cls.staff_a, dormitory=cls.dorm_a, can_log_parcels=True
         )
 
         # Tenant with line_id

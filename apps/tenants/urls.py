@@ -5,6 +5,7 @@ from apps.tenants.views import (
     TenantCreateView,
     TenantUpdateView,
     AnonymizeTenantView,
+    OcrIdCardView,
 )
 
 app_name = 'tenants'
@@ -16,4 +17,6 @@ urlpatterns = [
     path('<uuid:pk>/edit/', TenantUpdateView.as_view(), name='update'),
     # PDPA Right to be Forgotten — owner only, irreversible
     path('<uuid:pk>/anonymize/', AnonymizeTenantView.as_view(), name='anonymize'),
+    # N1: OCR stub endpoint
+    path('ocr-id-card/', OcrIdCardView.as_view(), name='ocr_id_card'),
 ]

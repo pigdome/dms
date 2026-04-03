@@ -1,3 +1,5 @@
+from django.shortcuts import redirect
+
 from apps.core.models import Dormitory
 
 
@@ -56,3 +58,34 @@ class ActiveDormitoryMiddleware:
                 del request.session['active_dormitory_id']
 
         return request.user.dormitory
+
+
+class ForcePasswordChangeMiddleware:
+    """
+    S8-2: บังคับ tenant ที่มี must_change_password=True ให้เปลี่ยน password ก่อนใช้งาน
+    - เฉพาะ role='tenant' เท่านั้น — owner/staff/superadmin ไม่ถูกกระทบ
+    - Exempt paths: change-password, logout, health, static, media, admin
+      เพื่อป้องกัน infinite redirect loop และให้ logout ได้เสมอ
+    """
+
+    EXEMPT_PATHS = [
+        '/tenant/change-password/',
+        '/logout/',
+        '/health/',
+        '/static/',
+        '/media/',
+        '/admin/',
+    ]
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.user.is_authenticated:
+            if (
+                request.user.role == 'tenant'
+                and getattr(request.user, 'must_change_password', False)
+                and not any(request.path.startswith(p) for p in self.EXEMPT_PATHS)
+            ):
+                return redirect('tenant:change_password')
+        return self.get_response(request)

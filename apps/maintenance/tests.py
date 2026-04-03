@@ -33,6 +33,10 @@ class TicketTenantIsolationTests(TestCase):
         cls.staff_a = CustomUser.objects.create_user(
             'maint_staff_a', password='pass', role='staff', dormitory=cls.dorm_a
         )
+        from apps.core.models import StaffPermission
+        StaffPermission.objects.create(
+            user=cls.staff_a, dormitory=cls.dorm_a, can_manage_maintenance=True
+        )
         cls.ticket_a = MaintenanceTicket.objects.create(
             room=cls.room_a, reported_by=cls.staff_a, description='Broken A'
         )
@@ -193,6 +197,10 @@ class MaintenanceLifecycleIntegrationTests(TestCase):
         )
         cls.owner = CustomUser.objects.create_user(
             'lc_owner', password='pass', role='owner', dormitory=cls.dorm
+        )
+        from apps.core.models import StaffPermission
+        StaffPermission.objects.create(
+            user=cls.staff, dormitory=cls.dorm, can_manage_maintenance=True
         )
 
         # Tenant with active lease

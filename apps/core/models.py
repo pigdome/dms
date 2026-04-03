@@ -95,6 +95,12 @@ class CustomUser(AbstractUser):
         related_name='users',
         help_text='Active/current dormitory context for this user'
     )
+    # I5: บังคับ user เปลี่ยน password เมื่อ login ครั้งแรก
+    # set เป็น True เมื่อสร้าง account โดย owner/staff
+    must_change_password = models.BooleanField(
+        default=False,
+        help_text='Force user to change password on next login',
+    )
     dormitories = models.ManyToManyField(
         Dormitory,
         through='UserDormitoryRole',
@@ -148,6 +154,43 @@ class UserDormitoryRole(models.Model):
 
     def __str__(self):
         return f'{self.user} @ {self.dormitory} ({self.role})'
+
+
+class StaffPermission(models.Model):
+    """
+    I2: Granular permission matrix สำหรับ staff user
+    Owner สร้าง/แก้ไข permissions เหล่านี้ผ่าน UI (checkbox matrix)
+    Staff ที่ไม่มี record นี้ถือว่าไม่มีสิทธิ์ใด ๆ เลย
+    Owner/building_manager/superadmin ผ่าน check ทั้งหมดเสมอ
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='staff_permission',
+        help_text='Staff user ที่ permission นี้เป็นของ',
+    )
+    dormitory = models.ForeignKey(
+        Dormitory,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='staff_permissions',
+    )
+    can_view_billing = models.BooleanField(default=False, help_text='ดูบิลและการชำระเงิน')
+    can_record_meter = models.BooleanField(default=False, help_text='บันทึกมิเตอร์น้ำ/ไฟ')
+    can_manage_maintenance = models.BooleanField(default=False, help_text='จัดการงานแจ้งซ่อม')
+    can_log_parcels = models.BooleanField(default=False, help_text='บันทึกพัสดุ')
+    can_view_tenants = models.BooleanField(default=False, help_text='ดูข้อมูลผู้เช่า')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Staff Permission'
+        verbose_name_plural = 'Staff Permissions'
+
+    def __str__(self):
+        return f'StaffPermission({self.user.username})'
 
 
 class ActivityLog(TenantModelMixin):

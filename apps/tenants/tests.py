@@ -569,3 +569,290 @@ class TenantPortalJourneyTests(TestCase):
         resp = self.client.get(url)
         expected = reverse('tenants:detail', kwargs={'pk': self.profile_a.pk})
         self.assertRedirects(resp, expected, fetch_redirect_response=False)
+
+
+# ---------------------------------------------------------------------------
+# I1: id_card_no Encryption + Hash + Masked Property
+# ---------------------------------------------------------------------------
+
+class IDCardEncryptionTests(TestCase):
+    """
+    I1: ตรวจสอบว่า id_card_no ถูก encrypt at rest, id_card_hash ถูกคำนวณ
+    และ id_card_masked แสดงผลถูกต้อง
+    """
+
+    def setUp(self):
+        self.dorm = Dormitory.objects.create(name='Enc Dorm', address='Addr')
+        self.room = _make_room(self.dorm, '501')
+        self.tenant = _make_tenant('enc_tenant', self.dorm, room=self.room)
+
+    def test_id_card_hash_computed_on_save(self):
+        """save() ต้องคำนวณ id_card_hash เมื่อ set id_card_no"""
+        import hashlib
+        import hmac as _hmac
+        from django.conf import settings
+
+        with dormitory_context(self.dorm):
+            self.tenant.id_card_no = '1234567890123'
+            self.tenant.save()
+
+        self.tenant.refresh_from_db()
+        secret = settings.SECRET_KEY.encode('utf-8')
+        expected_hash = _hmac.new(
+            secret, '1234567890123'.encode('utf-8'), hashlib.sha256
+        ).hexdigest()
+        self.assertEqual(self.tenant.id_card_hash, expected_hash)
+
+    def test_id_card_hash_cleared_when_id_card_no_empty(self):
+        """ถ้า id_card_no เป็น '' ต้อง clear id_card_hash ด้วย"""
+        with dormitory_context(self.dorm):
+            self.tenant.id_card_no = '1234567890123'
+            self.tenant.save()
+            self.tenant.id_card_no = ''
+            self.tenant.save()
+
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.id_card_hash, '')
+
+    def test_id_card_masked_13_digits(self):
+        """id_card_masked ต้องแสดงแค่ 4 ตัวท้ายในรูปแบบ X-XXXX-XXXXX-XX-X"""
+        with dormitory_context(self.dorm):
+            self.tenant.id_card_no = '1234567890123'
+            self.tenant.save()
+
+        self.assertEqual(self.tenant.id_card_masked, 'X-XXXX-XXXXX-12-3')
+
+    def test_id_card_masked_redacted(self):
+        """id_card_masked ของ [REDACTED] ต้องคืน '[REDACTED]' ทันที"""
+        with dormitory_context(self.dorm):
+            self.tenant.id_card_no = '[REDACTED]'
+            self.tenant.id_card_hash = ''
+            self.tenant.save()
+
+        self.assertEqual(self.tenant.id_card_masked, '[REDACTED]')
+
+    def test_id_card_hash_not_set_for_redacted(self):
+        """[REDACTED] ต้องไม่คำนวณ hash (ไม่ให้ lookup ได้หลัง anonymize)"""
+        with dormitory_context(self.dorm):
+            self.tenant.id_card_no = '[REDACTED]'
+            self.tenant.id_card_hash = ''
+            self.tenant.save()
+
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.id_card_hash, '')
+
+    def test_anonymize_clears_id_card_hash(self):
+        """anonymize() ต้อง clear id_card_hash ด้วย"""
+        with dormitory_context(self.dorm):
+            self.tenant.id_card_no = '1234567890123'
+            self.tenant.save()
+
+        self.tenant.anonymize()
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.id_card_hash, '')
+        self.assertEqual(self.tenant.id_card_no, '[REDACTED]')
+
+    def test_two_tenants_same_id_card_have_same_hash(self):
+        """Tenants ที่มี id_card_no เดียวกัน → id_card_hash เดียวกัน (lookup ได้)"""
+        import hashlib
+        import hmac as _hmac
+        from django.conf import settings
+
+        tenant2 = _make_tenant('enc_tenant2', self.dorm)
+        with dormitory_context(self.dorm):
+            self.tenant.id_card_no = '9999999999999'
+            self.tenant.save()
+            tenant2.id_card_no = '9999999999999'
+            tenant2.save()
+
+        self.tenant.refresh_from_db()
+        tenant2.refresh_from_db()
+        self.assertEqual(self.tenant.id_card_hash, tenant2.id_card_hash)
+
+
+# ---------------------------------------------------------------------------
+# I2: StaffPermission Granularity
+# ---------------------------------------------------------------------------
+
+class StaffPermissionTests(TestCase):
+    """
+    I2: ตรวจสอบว่า StaffPermissionRequiredMixin enforce permission ถูกต้อง
+    - owner ผ่านทุก view
+    - staff ที่มี permission ถูกต้องผ่านได้
+    - staff ที่ไม่มี permission → 403
+    - staff ที่ไม่มี StaffPermission record → 403
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.dorm = Dormitory.objects.create(name='Perm Dorm', address='Addr')
+        cls.owner = CustomUser.objects.create_user(
+            'perm_owner', password='pass', role='owner', dormitory=cls.dorm
+        )
+        cls.staff_full = CustomUser.objects.create_user(
+            'perm_staff_full', password='pass', role='staff', dormitory=cls.dorm
+        )
+        cls.staff_limited = CustomUser.objects.create_user(
+            'perm_staff_limited', password='pass', role='staff', dormitory=cls.dorm
+        )
+        cls.staff_no_perm = CustomUser.objects.create_user(
+            'perm_staff_noperm', password='pass', role='staff', dormitory=cls.dorm
+        )
+        cls.tenant_user = CustomUser.objects.create_user(
+            'perm_tenant', password='pass', role='tenant', dormitory=cls.dorm
+        )
+
+        from apps.core.models import StaffPermission
+        # Full staff: มี can_view_billing เท่านั้น
+        StaffPermission.objects.create(
+            user=cls.staff_full,
+            dormitory=cls.dorm,
+            can_view_billing=True,
+            can_record_meter=True,
+            can_manage_maintenance=True,
+            can_log_parcels=True,
+            can_view_tenants=True,
+        )
+        # Limited staff: มีแค่ can_log_parcels
+        StaffPermission.objects.create(
+            user=cls.staff_limited,
+            dormitory=cls.dorm,
+            can_log_parcels=True,
+        )
+        # staff_no_perm: ไม่มี StaffPermission record เลย
+
+    def test_owner_can_access_billing_list(self):
+        """Owner เข้า billing list ได้"""
+        self.client.force_login(self.owner)
+        resp = self.client.get(reverse('billing:list'))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_staff_with_billing_perm_can_access_billing_list(self):
+        """Staff ที่มี can_view_billing=True เข้า billing list ได้"""
+        self.client.force_login(self.staff_full)
+        resp = self.client.get(reverse('billing:list'))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_staff_without_billing_perm_denied_billing_list(self):
+        """Staff ที่มีแค่ can_log_parcels → billing list ต้อง 403"""
+        self.client.force_login(self.staff_limited)
+        resp = self.client.get(reverse('billing:list'))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_staff_with_no_record_denied(self):
+        """Staff ที่ไม่มี StaffPermission record → 403 ทุก view ที่ใช้ StaffPermissionRequiredMixin"""
+        self.client.force_login(self.staff_no_perm)
+        resp = self.client.get(reverse('billing:list'))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_tenant_denied_billing_list(self):
+        """Tenant ถูก deny เสมอ"""
+        self.client.force_login(self.tenant_user)
+        resp = self.client.get(reverse('billing:list'))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_staff_limited_can_access_parcel_view(self):
+        """Staff ที่มี can_log_parcels สามารถเข้า ParcelCreateView ได้"""
+        self.client.force_login(self.staff_limited)
+        resp = self.client.get('/notifications/parcels/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_staff_full_can_access_tenant_list(self):
+        """Staff ที่มี can_view_tenants=True เข้า tenant list ได้"""
+        self.client.force_login(self.staff_full)
+        resp = self.client.get(reverse('tenants:list'))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_staff_limited_denied_tenant_list(self):
+        """Staff ที่ไม่มี can_view_tenants → tenant list ต้อง 403"""
+        self.client.force_login(self.staff_limited)
+        resp = self.client.get(reverse('tenants:list'))
+        self.assertEqual(resp.status_code, 403)
+
+
+# ---------------------------------------------------------------------------
+# S8-2: ForcePasswordChangeMiddleware Tests
+# ---------------------------------------------------------------------------
+
+class ForcePasswordChangeMiddlewareTests(TestCase):
+    """
+    ทดสอบ ForcePasswordChangeMiddleware:
+    - tenant ที่ must_change_password=True ถูก redirect ทุก URL
+    - tenant ที่ must_change_password=False ผ่านได้ปกติ
+    - change-password URL เองไม่ถูก redirect (ป้องกัน infinite loop)
+    - logout URL ไม่ถูก redirect
+    - owner/staff ที่มี must_change_password=True ไม่ถูก redirect
+    - หลังเปลี่ยน password สำเร็จ must_change_password เป็น False
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.dorm = Dormitory.objects.create(name='Middleware Test Dorm', address='Addr')
+        cls.room = _make_room(cls.dorm, 'M101')
+
+    def _make_tenant_user(self, username, must_change=False):
+        with dormitory_context(self.dorm):
+            user = CustomUser.objects.create_user(
+                username, password='testpass123', role='tenant', dormitory=self.dorm
+            )
+        user.must_change_password = must_change
+        user.save(update_fields=['must_change_password'])
+        return user
+
+    def test_tenant_with_flag_redirected_to_change_password(self):
+        """tenant ที่ must_change_password=True ต้องถูก redirect ไป /tenant/change-password/"""
+        user = self._make_tenant_user('mw_tenant_must', must_change=True)
+        self.client.force_login(user)
+        resp = self.client.get('/tenant/home/')
+        self.assertRedirects(resp, '/tenant/change-password/', fetch_redirect_response=False)
+
+    def test_tenant_without_flag_not_redirected(self):
+        """tenant ที่ must_change_password=False ต้องผ่านได้ปกติ (ไม่ redirect)"""
+        user = self._make_tenant_user('mw_tenant_ok', must_change=False)
+        self.client.force_login(user)
+        resp = self.client.get('/tenant/home/')
+        # ไม่ redirect ไป change-password (อาจได้ 200 หรือ redirect ไปที่อื่นก็ได้)
+        self.assertNotEqual(resp.get('Location', ''), '/tenant/change-password/')
+
+    def test_change_password_url_not_redirected(self):
+        """GET /tenant/change-password/ เองต้องไม่ถูก redirect (ป้องกัน infinite loop)"""
+        user = self._make_tenant_user('mw_tenant_cp', must_change=True)
+        self.client.force_login(user)
+        resp = self.client.get('/tenant/change-password/')
+        # ต้องไม่ redirect กลับไป change-password อีก
+        self.assertNotEqual(resp.status_code, 302)
+
+    def test_logout_url_not_redirected(self):
+        """GET/POST /logout/ ต้องไม่ถูก redirect โดย middleware (logout ต้องทำได้เสมอ)"""
+        user = self._make_tenant_user('mw_tenant_logout', must_change=True)
+        self.client.force_login(user)
+        resp = self.client.post('/logout/')
+        # Logout view redirect ไป login page ตามปกติ ไม่ใช่ change-password
+        location = resp.get('Location', '')
+        self.assertNotIn('change-password', location)
+
+    def test_owner_not_affected(self):
+        """owner ที่ must_change_password=True ต้องไม่ถูก redirect (role ต่างกัน)"""
+        owner = CustomUser.objects.create_user(
+            'mw_owner_must', password='ownerpass123', role='owner', dormitory=self.dorm
+        )
+        owner.must_change_password = True
+        owner.save(update_fields=['must_change_password'])
+        self.client.force_login(owner)
+        resp = self.client.get('/dashboard/')
+        # ต้องไม่ redirect ไป /tenant/change-password/
+        location = resp.get('Location', '')
+        self.assertNotIn('change-password', location)
+
+    def test_password_change_clears_flag(self):
+        """POST /tenant/change-password/ สำเร็จ → must_change_password ต้องเป็น False"""
+        user = self._make_tenant_user('mw_tenant_clear', must_change=True)
+        self.client.force_login(user)
+        resp = self.client.post('/tenant/change-password/', {
+            'current_password': 'testpass123',
+            'new_password': 'newpassword456',
+            'confirm_password': 'newpassword456',
+        })
+        user.refresh_from_db()
+        self.assertFalse(user.must_change_password)
+        self.assertRedirects(resp, '/tenant/home/', fetch_redirect_response=False)

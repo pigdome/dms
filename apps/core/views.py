@@ -7,10 +7,37 @@ from django.utils.translation import gettext_lazy as _
 from django.views import View
 from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.db import transaction
 
 from apps.core.mixins import OwnerRequiredMixin, StaffRequiredMixin
+
+
+def custom_404(request, exception=None):
+    return render(request, '404.html', status=404)
+
+
+def custom_500(request):
+    return render(request, '500.html', status=500)
+
+
+def health_check(request):
+    """
+    B8: Health check endpoint สำหรับ Docker/Nginx healthcheck
+    ตรวจสอบ DB connectivity ด้วย — ถ้า DB ล่มจะ return 503
+    """
+    try:
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+        db_ok = True
+    except Exception:
+        db_ok = False
+
+    if not db_ok:
+        return JsonResponse({'status': 'error', 'db': 'unreachable'}, status=503)
+
+    return JsonResponse({'status': 'ok', 'db': 'ok'})
 
 
 def landing_view(request):
@@ -860,6 +887,12 @@ class ImportTenantsView(OwnerRequiredMixin, View):
                         username = f"{base_username}{counter}"
                         counter += 1
 
+                    # I5: สร้าง random password แทน default=username เพื่อความปลอดภัย
+                    import secrets as _secrets
+                    import string as _string
+                    _alphabet = _string.ascii_letters + _string.digits
+                    temp_password = ''.join(_secrets.choice(_alphabet) for _ in range(12))
+
                     # สร้าง user account สำหรับผู้เช่า
                     user = CustomUser.objects.create_user(
                         username=username,
@@ -869,9 +902,10 @@ class ImportTenantsView(OwnerRequiredMixin, View):
                         role=CustomUser.Role.TENANT,
                         dormitory=dormitory,
                     )
-                    # ตั้ง password ชั่วคราว = username (ผู้เช่าต้องเปลี่ยนเอง)
-                    user.set_password(username)
-                    user.save(update_fields=['password'])
+                    # I5: ตั้ง random password + บังคับเปลี่ยนเมื่อ login ครั้งแรก
+                    user.set_password(temp_password)
+                    user.must_change_password = True
+                    user.save(update_fields=['password', 'must_change_password'])
 
                     # ดึง room object
                     room = Room.unscoped_objects.get(pk=row['room_id'])

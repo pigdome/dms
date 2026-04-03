@@ -10,7 +10,7 @@ Permission Enforcement Tests — Task 1.3
 """
 from django.test import TestCase
 
-from apps.core.models import CustomUser, Dormitory, UserDormitoryRole
+from apps.core.models import CustomUser, Dormitory, UserDormitoryRole, StaffPermission
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +46,16 @@ class _PermFixture:
         )
         UserDormitoryRole.objects.create(
             user=cls.owner2, dormitory=cls.dorm2, role='owner', is_primary=True
+        )
+        # StaffPermission สำหรับ staff เพื่อให้ StaffPermissionRequiredMixin ผ่าน
+        StaffPermission.objects.create(
+            user=cls.staff,
+            dormitory=cls.dorm1,
+            can_view_billing=True,
+            can_record_meter=True,
+            can_manage_maintenance=True,
+            can_log_parcels=True,
+            can_view_tenants=True,
         )
 
 

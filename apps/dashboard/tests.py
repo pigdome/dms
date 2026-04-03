@@ -309,3 +309,80 @@ class ReportViewTests(TestCase):
         now = timezone.now()
         self.assertEqual(resp.context['default_month'], now.strftime('%Y-%m'))
         self.assertEqual(resp.context['month_filter'], now.strftime('%Y-%m'))
+
+
+# ---------------------------------------------------------------------------
+# S8-4: Dashboard Cache Tests
+# ---------------------------------------------------------------------------
+
+class DashboardCacheTests(TestCase):
+    """
+    ทดสอบว่า dashboard stats ถูก cache และ cache key แยกตาม dormitory
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.dorm_a = Dormitory.objects.create(name='Cache Dorm A', address='CA')
+        cls.dorm_b = Dormitory.objects.create(name='Cache Dorm B', address='CB')
+
+        cls.room_a = _make_room(cls.dorm_a, 'CA1')
+        cls.room_b = _make_room(cls.dorm_b, 'CB1')
+
+        cls.owner_a = CustomUser.objects.create_user(
+            'cache_owner_a', password='pass', role='owner', dormitory=cls.dorm_a
+        )
+        cls.owner_b = CustomUser.objects.create_user(
+            'cache_owner_b', password='pass', role='owner', dormitory=cls.dorm_b
+        )
+
+    def setUp(self):
+        # ล้าง cache ก่อน test ทุกครั้งเพื่อป้องกัน test interference
+        from django.core.cache import cache
+        cache.clear()
+
+    def test_dashboard_uses_cache_on_second_request(self):
+        """
+        Request แรก: cache miss → run queries
+        Request ที่ 2: cache hit → ไม่ run queries อีก (ได้ data เดิม)
+        """
+        from django.core.cache import cache
+        self.client.force_login(self.owner_a)
+
+        cache_key = f'dashboard:stats:{self.dorm_a.pk}'
+
+        # Request แรก: cache ต้องว่าง
+        self.assertIsNone(cache.get(cache_key), "ก่อน request แรก cache ต้องว่าง")
+
+        resp1 = self.client.get('/dashboard/')
+        self.assertEqual(resp1.status_code, 200)
+
+        # หลัง request แรก: cache ต้องมีข้อมูล
+        cached_stats = cache.get(cache_key)
+        self.assertIsNotNone(cached_stats, "หลัง request แรก cache ต้องมีข้อมูล")
+        self.assertIn('total_income', cached_stats)
+        self.assertIn('vacant_count', cached_stats)
+
+        # Request ที่ 2: ได้ข้อมูลเดิมจาก cache
+        resp2 = self.client.get('/dashboard/')
+        self.assertEqual(resp2.status_code, 200)
+        self.assertEqual(resp2.context['vacant_count'], resp1.context['vacant_count'])
+        self.assertEqual(resp2.context['overdue_count'], resp1.context['overdue_count'])
+
+    def test_cache_key_scoped_to_dormitory(self):
+        """
+        dorm_a และ dorm_b ต้องมี cache key แยกกัน — ป้องกัน tenant data leak
+        """
+        from django.core.cache import cache
+
+        self.client.force_login(self.owner_a)
+        self.client.get('/dashboard/')
+
+        self.client.force_login(self.owner_b)
+        self.client.get('/dashboard/')
+
+        key_a = f'dashboard:stats:{self.dorm_a.pk}'
+        key_b = f'dashboard:stats:{self.dorm_b.pk}'
+
+        self.assertNotEqual(key_a, key_b, "Cache key ของ dorm_a และ dorm_b ต้องต่างกัน")
+        self.assertIsNotNone(cache.get(key_a), "dorm_a ต้องมีข้อมูลใน cache")
+        self.assertIsNotNone(cache.get(key_b), "dorm_b ต้องมีข้อมูลใน cache")

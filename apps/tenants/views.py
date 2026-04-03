@@ -6,7 +6,7 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.tenants.models import TenantProfile, Lease
 
-from apps.core.mixins import StaffRequiredMixin, OwnerRequiredMixin
+from apps.core.mixins import StaffRequiredMixin, OwnerRequiredMixin, StaffPermissionRequiredMixin
 from apps.core.utils import SimpleForm
 from apps.core.models import ActivityLog
 
@@ -25,7 +25,9 @@ def _dorm_profiles(user, dormitory=None):
     ).distinct().select_related('user', 'room', 'room__floor', 'room__floor__building')
 
 
-class TenantListView(StaffRequiredMixin, View):
+class TenantListView(StaffPermissionRequiredMixin, View):
+    """รายการผู้เช่า — owner/superadmin ผ่านทันที, staff ต้องมี can_view_tenants"""
+    permission_flag = 'can_view_tenants'
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         profiles = _dorm_profiles(request.user, dormitory=dorm)
@@ -73,7 +75,8 @@ class TenantDetailView(LoginRequiredMixin, View):
         })
 
 
-class TenantCreateView(StaffRequiredMixin, View):
+class TenantCreateView(StaffPermissionRequiredMixin, View):
+    permission_flag = 'can_view_tenants'
     def _context(self, user, data=None, dormitory=None):
         from apps.rooms.models import Room
         dorm = dormitory or user.dormitory
@@ -112,15 +115,26 @@ class TenantCreateView(StaffRequiredMixin, View):
             messages.error(request, _('Username already exists.'))
             return render(request, 'tenants/form.html', self._context(request.user, data, dormitory=dorm))
 
+        # I5: สร้าง random password 12 chars แทน default=username
+        # เพื่อป้องกันผู้เช่าคาดเดา password ของคนอื่นได้
+        import secrets
+        import string
+        alphabet = string.ascii_letters + string.digits
+        generated_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+        final_password = password if password else generated_password
+
         # Create user
         user = CustomUser.objects.create_user(
             username=username,
-            password=password or username,  # fallback to username if no password
+            password=final_password,
             first_name=first_name,
             last_name=last_name,
             role='tenant',
             dormitory=dorm,
         )
+        # I5: บังคับเปลี่ยน password เมื่อ login ครั้งแรก
+        user.must_change_password = True
+        user.save(update_fields=['must_change_password'])
 
         # Assign room if specified
         room = None
@@ -153,12 +167,22 @@ class TenantCreateView(StaffRequiredMixin, View):
             action='tenant_added',
             detail={'profile_id': profile.pk, 'name': profile.full_name},
         )
-        messages.success(request, _('Tenant added successfully.'))
+        # I5: แสดง generated password ครั้งเดียวใน success message
+        # (เฉพาะกรณีที่ไม่ได้กรอก password เอง)
+        if not password:
+            messages.success(
+                request,
+                _('Tenant added successfully. Temporary password: %(pw)s (shown once only)')
+                % {'pw': generated_password},
+            )
+        else:
+            messages.success(request, _('Tenant added successfully.'))
         return redirect('tenants:detail', pk=profile.pk)
 
 
 
-class TenantUpdateView(StaffRequiredMixin, View):
+class TenantUpdateView(StaffPermissionRequiredMixin, View):
+    permission_flag = 'can_view_tenants'
     def get(self, request, pk):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         profile = get_object_or_404(_dorm_profiles(request.user, dormitory=dorm), pk=pk)
@@ -332,12 +356,14 @@ class TenantBillDetailView(LoginRequiredMixin, View):
         payment = getattr(bill, 'payment', None)
         line_items = bill.line_items.all()
 
-        # TMR QR URL (if bill is unpaid and dormitory has TMR configured)
+        # B3 fix: ใช้ server-side QR redirect endpoint แทนการ expose tmr_api_key ใน URL
+        # tmr_api_key จะไม่โผล่ใน HTML หรือ network tab ของ tenant อีกต่อไป
         tmr_qr_url = None
         try:
             billing_settings = bill.room.floor.building.dormitory.billing_settings
             if billing_settings.tmr_api_key and bill.status in ('sent', 'overdue'):
-                tmr_qr_url = f"https://payment.tmr.th/qr/{billing_settings.tmr_api_key}/{bill.invoice_number}"
+                from django.urls import reverse
+                tmr_qr_url = reverse('billing:qr_redirect', kwargs={'bill_id': bill.pk})
         except Exception:
             pass
 
@@ -420,5 +446,59 @@ class TenantProfileView(LoginRequiredMixin, View):
             'profile': profile,
             'leases': leases,
         })
+
+
+class TenantChangePasswordView(LoginRequiredMixin, View):
+    """N3: Tenant self-service password change — บังคับเปลี่ยนถ้า must_change_password=True"""
+
+    def get(self, request):
+        if request.user.role != 'tenant':
+            return redirect('dashboard:index')
+        return render(request, 'tenants/tenant_change_password.html')
+
+    def post(self, request):
+        if request.user.role != 'tenant':
+            return redirect('dashboard:index')
+
+        user = request.user
+        current = request.POST.get('current_password', '')
+        new_pw = request.POST.get('new_password', '')
+        confirm = request.POST.get('confirm_password', '')
+
+        if not user.check_password(current):
+            messages.error(request, _('รหัสผ่านปัจจุบันไม่ถูกต้อง'))
+            return render(request, 'tenants/tenant_change_password.html')
+
+        if new_pw == current:
+            messages.error(request, _('รหัสผ่านใหม่ต้องไม่เหมือนรหัสผ่านเดิม'))
+            return render(request, 'tenants/tenant_change_password.html')
+
+        if new_pw != confirm:
+            messages.error(request, _('รหัสผ่านใหม่ไม่ตรงกัน'))
+            return render(request, 'tenants/tenant_change_password.html')
+
+        if len(new_pw) < 8:
+            messages.error(request, _('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร'))
+            return render(request, 'tenants/tenant_change_password.html')
+
+        user.set_password(new_pw)
+        user.must_change_password = False
+        user.save(update_fields=['password', 'must_change_password'])
+
+        from django.contrib.auth import update_session_auth_hash
+        update_session_auth_hash(request, user)
+
+        messages.success(request, _('เปลี่ยนรหัสผ่านสำเร็จ'))
+        return redirect('tenant:home')
+
+
+class OcrIdCardView(LoginRequiredMixin, View):
+    """N1: OCR stub — GLM-OCR ยังไม่พร้อม implement จริง (ZhipuAI cloud API)"""
+
+    def post(self, request):
+        return JsonResponse(
+            {'status': 'not_implemented', 'message': 'OCR feature coming soon'},
+            status=501,
+        )
 
 

@@ -113,6 +113,62 @@ class BuildingManagerRequiredMixin(LoginRequiredMixin):
         return user.managed_buildings.all()
 
 
+class StaffPermissionRequiredMixin(LoginRequiredMixin):
+    """
+    I2: Mixin ที่ตรวจ StaffPermission สำหรับ views ที่ต้องการ permission เฉพาะ
+
+    วิธีใช้:
+        class BillListView(StaffPermissionRequiredMixin, View):
+            permission_flag = 'can_view_billing'
+
+    Roles ที่ผ่านทั้งหมดโดยอัตโนมัติ: owner, superadmin, building_manager
+    Staff ต้องมี StaffPermission record ที่ permission_flag=True
+
+    ถ้าไม่กำหนด permission_flag จะ fallback เป็น StaffRequiredMixin behavior (role check เท่านั้น)
+    """
+    permission_flag: str = ''
+
+    # Roles ที่ผ่านทุก permission โดยไม่ต้อง check StaffPermission
+    _BYPASS_ROLES = frozenset({'owner', 'superadmin', 'building_manager'})
+    # Roles ที่ต้อง check StaffPermission
+    _STAFF_ROLES = frozenset({'staff'})
+    # Roles ที่ไม่มีสิทธิ์เลย
+    _DENIED_ROLES = frozenset({'tenant'})
+
+    def dispatch(self, request, *args, **kwargs):
+        response = super().dispatch(request, *args, **kwargs)
+        if response.status_code in (301, 302):
+            return response
+
+        user = request.user
+        role = getattr(user, 'role', None)
+
+        # Tenant ไม่มีสิทธิ์เข้า staff views
+        if role in self._DENIED_ROLES:
+            raise PermissionDenied
+
+        # Owner/superadmin/building_manager ผ่านทุก permission
+        if role in self._BYPASS_ROLES:
+            return response
+
+        # Staff ต้อง check StaffPermission record
+        if role in self._STAFF_ROLES and self.permission_flag:
+            try:
+                from apps.core.models import StaffPermission
+                # BUG #3 fix: ต้อง filter dormitory ด้วยเสมอ
+                # มิฉะนั้น staff ที่มี permission ใน dormitory A จะผ่าน check ของ dormitory B ได้
+                # ซึ่งเป็น tenant isolation leak ที่อันตราย
+                user_dormitory = getattr(request, 'active_dormitory', None) or getattr(user, 'dormitory', None)
+                perm = StaffPermission.objects.get(user=user, dormitory=user_dormitory)
+                if not getattr(perm, self.permission_flag, False):
+                    raise PermissionDenied
+            except StaffPermission.DoesNotExist:
+                # ไม่มี StaffPermission record สำหรับ dormitory นี้ = ไม่มีสิทธิ์
+                raise PermissionDenied
+
+        return response
+
+
 class TenantScopeMixin:
     """
     Mixin สำหรับ views ที่ต้อง enforce tenant isolation ใน queryset

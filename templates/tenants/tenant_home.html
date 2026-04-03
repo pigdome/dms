@@ -8,6 +8,19 @@
 {% block content %}
 <div class="px-4 py-4 space-y-4">
 
+  {% if request.user.must_change_password %}
+  <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-4 flex items-start gap-3">
+    <i class="fa-solid fa-triangle-exclamation text-amber-500 mt-0.5"></i>
+    <div class="flex-1">
+      <p class="font-semibold text-amber-800 dark:text-amber-300 text-sm">{% trans "Please change your password" %}</p>
+      <p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5">{% trans "Your account is using a temporary password. Please change it for your security." %}</p>
+      <a href="{% url 'tenant:change_password' %}" class="inline-block mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300 underline">
+        {% trans "Change password now" %} →
+      </a>
+    </div>
+  </div>
+  {% endif %}
+
   {% if not profile %}
   <div class="bg-amber-50 border border-amber-200 rounded-xl p-5 text-center">
     <i class="fa-solid fa-triangle-exclamation text-amber-500 text-3xl mb-2"></i>

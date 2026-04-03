@@ -8,7 +8,7 @@ from django.utils.translation import gettext_lazy as _
 from apps.maintenance.models import MaintenanceTicket, TicketPhoto, TicketStatusHistory
 from apps.tenants.models import TenantProfile
 
-from apps.core.mixins import StaffRequiredMixin
+from apps.core.mixins import StaffRequiredMixin, StaffPermissionRequiredMixin
 from apps.core.utils import SimpleForm
 from apps.core.models import ActivityLog
 
@@ -28,7 +28,9 @@ def _dorm_rooms(user, dormitory=None):
     ).select_related('floor', 'floor__building')
 
 
-class TicketListView(StaffRequiredMixin, View):
+class TicketListView(StaffPermissionRequiredMixin, View):
+    """รายการ Tickets — owner/superadmin ผ่านทันที, staff ต้องมี can_manage_maintenance"""
+    permission_flag = 'can_manage_maintenance'
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         tickets = _dorm_tickets(request.user, dormitory=dorm)
@@ -51,7 +53,8 @@ class TicketListView(StaffRequiredMixin, View):
         })
 
 
-class TicketDetailView(StaffRequiredMixin, View):
+class TicketDetailView(StaffPermissionRequiredMixin, View):
+    permission_flag = 'can_manage_maintenance'
     def get(self, request, pk):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         ticket = get_object_or_404(_dorm_tickets(request.user, dormitory=dorm), pk=pk)
@@ -61,7 +64,8 @@ class TicketDetailView(StaffRequiredMixin, View):
         })
 
 
-class TicketCreateView(StaffRequiredMixin, View):
+class TicketCreateView(StaffPermissionRequiredMixin, View):
+    permission_flag = 'can_manage_maintenance'
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         return render(request, 'maintenance/form.html', {

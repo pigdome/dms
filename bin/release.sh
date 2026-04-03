@@ -83,14 +83,6 @@ else
     ok "Working tree is clean."
 fi
 
-# ── Tag new version (if changed) ──────────────────────────────────────────────
-if [ "$NEW_TAG" != "$CURRENT_TAG" ]; then
-    git tag "$NEW_TAG"
-    ok "Tagged as ${NEW_TAG}."
-else
-    dim "Version unchanged — no new tag created."
-fi
-
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 info "Release complete!"

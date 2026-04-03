@@ -73,7 +73,7 @@ class Bill(AuditMixin, TenantModelMixin):
         'rooms.MeterReading', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='bills',
     )
-    month = models.DateField(help_text='First day of billing month')
+    month = models.DateField(help_text='First day of billing month', db_index=True)
     invoice_number = models.CharField(max_length=30, unique=True, null=True, blank=True, default=None)
     base_rent = models.DecimalField(max_digits=10, decimal_places=2)
     water_amt = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -81,8 +81,8 @@ class Bill(AuditMixin, TenantModelMixin):
     other_amt = models.DecimalField(max_digits=10, decimal_places=2, default=0,
                                      help_text='Sum of BillLineItem amounts (auto-updated by refresh_total)')
     total = models.DecimalField(max_digits=10, decimal_places=2)
-    due_date = models.DateField()
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    due_date = models.DateField(db_index=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -133,19 +133,53 @@ class Bill(AuditMixin, TenantModelMixin):
         if self.room_id and not getattr(self, 'dormitory_id', None):
             self.dormitory_id = self.room.dormitory_id
 
+        # S8-4: Invalidate dashboard cache เมื่อ bill เปลี่ยนแปลง
+        # ทำก่อน save เพื่อให้ next request ได้ข้อมูลใหม่เสมอ
+        if self.dormitory_id:
+            from django.core.cache import cache
+            cache.delete(f'dashboard:stats:{self.dormitory_id}')
+
         if not self.invoice_number and self.room_id:
+            from django.db import IntegrityError
             dorm = self.dormitory or self.room.floor.building.dormitory
             prefix = dorm.invoice_prefix or 'INV'
             ym = self.month.strftime('%y%m')
-            with transaction.atomic():
-                seq = (
-                    Bill.unscoped_objects.select_for_update()
-                    .filter(room__floor__building__dormitory=dorm, month=self.month)
-                    .exclude(pk=self.pk)
-                    .count()
-                ) + 1
-                self.invoice_number = f'{prefix}-{ym}-{seq:03d}'
-        super().save(*args, **kwargs)
+            # ใช้ pattern prefix เพื่อ filter invoice_number ของเดือนนี้
+            pattern = f'{prefix}-{ym}-'
+
+            # Retry loop สูงสุด 3 ครั้ง กรณีที่เกิด IntegrityError จาก race condition
+            for attempt in range(3):
+                try:
+                    with transaction.atomic():
+                        # MAX-based: หาเลข seq สูงสุดที่มีอยู่แล้ว parse จาก invoice_number
+                        # วิธีนี้ป้องกัน re-use เลขเดิมเมื่อ bill ถูกลบ (ต่างจาก count-based)
+                        existing = (
+                            Bill.unscoped_objects.select_for_update()
+                            .filter(
+                                room__floor__building__dormitory=dorm,
+                                month=self.month,
+                                invoice_number__startswith=pattern,
+                            )
+                            .exclude(pk=self.pk)
+                            .order_by('-invoice_number')
+                            .values_list('invoice_number', flat=True)
+                            .first()
+                        )
+                        if existing:
+                            last_seq = int(existing.split('-')[-1])
+                        else:
+                            last_seq = 0
+                        seq = last_seq + 1
+                        self.invoice_number = f'{prefix}-{ym}-{seq:03d}'
+                        super().save(*args, **kwargs)
+                    return  # save สำเร็จ
+                except IntegrityError:
+                    # invoice_number ซ้ำ — reset แล้ว retry
+                    self.invoice_number = None
+                    if attempt == 2:
+                        raise
+        else:
+            super().save(*args, **kwargs)
 
     def __str__(self):
         return f'Bill {self.room} - {self.month.strftime("%Y-%m")} ({self.status})'

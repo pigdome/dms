@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from apps.rooms.models import Room, Building, Floor, MeterReading
 
-from apps.core.mixins import StaffRequiredMixin
+from apps.core.mixins import StaffRequiredMixin, StaffPermissionRequiredMixin
 from apps.core.utils import SimpleForm
 from apps.core.models import ActivityLog
 
@@ -97,7 +97,9 @@ class RoomUpdateView(StaffRequiredMixin, View):
         return render(request, 'rooms/form.html', {'form': form, 'object': room})
 
 
-class MeterReadingCreateView(StaffRequiredMixin, View):
+class MeterReadingCreateView(StaffPermissionRequiredMixin, View):
+    """บันทึกมิเตอร์ — owner/superadmin ผ่านทันที, staff ต้องมี can_record_meter"""
+    permission_flag = 'can_record_meter'
     def get(self, request):
         dorm = getattr(request, 'active_dormitory', None) or request.user.dormitory
         from apps.rooms.forms import MeterReadingForm

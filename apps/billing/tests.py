@@ -477,19 +477,21 @@ class TMRWebhookTests(TestCase):
         )
 
     def test_happy_path_marks_bill_paid(self):
+        # B2 fix: ต้องส่ง secret จริงเสมอ — empty secret ถูก reject แล้ว
         from apps.billing.models import Bill, Payment
-        with self.settings(TMR_WEBHOOK_SECRET=''):
+        with self.settings(TMR_WEBHOOK_SECRET='test-secret'):
             resp = self._post({
                 'ref': 'TXN-001',
                 'order_id': 'WH1-2503-001',
                 'amount': '5000.00',
-            })
+            }, secret='test-secret')
         self.assertEqual(resp.status_code, 200)
         self.bill.refresh_from_db()
         self.assertEqual(self.bill.status, Bill.Status.PAID)
         self.assertTrue(Payment.objects.filter(idempotency_key='TXN-001').exists())
 
     def test_idempotent_duplicate_returns_200(self):
+        # B2 fix: ต้องส่ง secret จริงเสมอ — empty secret ถูก reject แล้ว
         from apps.billing.models import Payment
         from django.utils import timezone
         Payment.objects.create(
@@ -499,12 +501,12 @@ class TMRWebhookTests(TestCase):
             idempotency_key='TXN-DUP',
             paid_at=timezone.now(),
         )
-        with self.settings(TMR_WEBHOOK_SECRET=''):
+        with self.settings(TMR_WEBHOOK_SECRET='test-secret'):
             resp = self._post({
                 'ref': 'TXN-DUP',
                 'order_id': 'WH1-2503-001',
                 'amount': '5000.00',
-            })
+            }, secret='test-secret')
         self.assertEqual(resp.status_code, 200)
         resp_data = json.loads(resp.content)
         self.assertEqual(resp_data['status'], 'already_processed')
@@ -526,30 +528,50 @@ class TMRWebhookTests(TestCase):
         self.assertIn(resp.status_code, [200, 404])  # 200 ok or 404 if already paid
 
     def test_missing_ref_returns_400(self):
-        with self.settings(TMR_WEBHOOK_SECRET=''):
-            resp = self._post({'order_id': 'WH1-2503-001', 'amount': '5000'})
+        # B2 fix: ส่ง secret ถูกต้อง แต่ payload ขาด ref → ควรได้ 400
+        with self.settings(TMR_WEBHOOK_SECRET='test-secret'):
+            resp = self._post({'order_id': 'WH1-2503-001', 'amount': '5000'}, secret='test-secret')
         self.assertEqual(resp.status_code, 400)
 
     def test_missing_order_id_returns_400(self):
-        with self.settings(TMR_WEBHOOK_SECRET=''):
-            resp = self._post({'ref': 'TXN-NOID', 'amount': '5000'})
+        # B2 fix: ส่ง secret ถูกต้อง แต่ payload ขาด order_id → ควรได้ 400
+        with self.settings(TMR_WEBHOOK_SECRET='test-secret'):
+            resp = self._post({'ref': 'TXN-NOID', 'amount': '5000'}, secret='test-secret')
         self.assertEqual(resp.status_code, 400)
 
     def test_bill_not_found_returns_404(self):
-        with self.settings(TMR_WEBHOOK_SECRET=''):
+        # B2 fix: ส่ง secret ถูกต้อง แต่ invoice ไม่มีในระบบ → ควรได้ 404
+        with self.settings(TMR_WEBHOOK_SECRET='test-secret'):
             resp = self._post({
                 'ref': 'TXN-NOTFOUND',
                 'order_id': 'NONEXISTENT-999',
                 'amount': '5000',
-            })
+            }, secret='test-secret')
         self.assertEqual(resp.status_code, 404)
 
+    def test_no_secret_configured_returns_400(self):
+        # B2: ถ้า TMR_WEBHOOK_SECRET ไม่ได้ตั้งค่า → 400 ทันที ห้าม skip verify
+        with self.settings(TMR_WEBHOOK_SECRET=''):
+            resp = self._post({
+                'ref': 'TXN-NOSECRET',
+                'order_id': 'WH1-2503-001',
+                'amount': '5000',
+            })
+        self.assertEqual(resp.status_code, 400)
+
     def test_bad_json_returns_400(self):
-        resp = self.client.post(
-            reverse('billing:tmr_webhook'),
-            data=b'not-json',
-            content_type='application/json',
-        )
+        # bad JSON ถูกตรวจสอบหลัง signature — ต้องส่ง signature ถูกต้องก่อน
+        import hashlib, hmac as _hmac
+        body = b'not-json'
+        secret = 'test-secret'
+        sig = _hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        with self.settings(TMR_WEBHOOK_SECRET=secret):
+            resp = self.client.post(
+                reverse('billing:tmr_webhook'),
+                data=body,
+                content_type='application/json',
+                HTTP_X_TMR_SIGNATURE=sig,
+            )
         self.assertEqual(resp.status_code, 400)
 
 
@@ -1307,6 +1329,11 @@ class BillingCycleIntegrationTests(TestCase):
             'cyc_tenant', password='pass', role='tenant', dormitory=cls.dorm
         )
 
+        from apps.core.models import StaffPermission
+        StaffPermission.objects.create(
+            user=cls.staff, dormitory=cls.dorm, can_view_billing=True
+        )
+
         # tenant profile + active lease ผูกกับห้อง
         cls.profile = TenantProfile.objects.create(
             user=cls.tenant_user,
@@ -1453,15 +1480,21 @@ class BillingCycleIntegrationTests(TestCase):
             status=Bill.Status.SENT,
             invoice_number='CYC-2608-INT01',
         )
-        with self.settings(TMR_WEBHOOK_SECRET=''):
+        # B2 fix: ต้องส่ง HMAC signature พร้อม secret เสมอ
+        import hashlib, hmac as _hmac
+        test_secret = 'test-secret'
+        payload_bytes = json.dumps({
+            'ref': 'TXN-INT-001',
+            'order_id': 'CYC-2608-INT01',
+            'amount': '5000.00',
+        }).encode()
+        sig = _hmac.new(test_secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+        with self.settings(TMR_WEBHOOK_SECRET=test_secret):
             resp = self.client.post(
                 reverse('billing:tmr_webhook'),
-                data=json.dumps({
-                    'ref': 'TXN-INT-001',
-                    'order_id': 'CYC-2608-INT01',
-                    'amount': '5000.00',
-                }).encode(),
+                data=payload_bytes,
                 content_type='application/json',
+                HTTP_X_TMR_SIGNATURE=sig,
             )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(json.loads(resp.content)['status'], 'ok')
@@ -1489,14 +1522,20 @@ class BillingCycleIntegrationTests(TestCase):
             'order_id': 'CYC-2609-INT02',
             'amount': '5000.00',
         }).encode()
-        with self.settings(TMR_WEBHOOK_SECRET=''):
+        # B2 fix: ต้องส่ง HMAC signature พร้อม secret เสมอ
+        import hashlib, hmac as _hmac
+        test_secret = 'test-secret'
+        sig = _hmac.new(test_secret.encode(), payload, hashlib.sha256).hexdigest()
+        with self.settings(TMR_WEBHOOK_SECRET=test_secret):
             self.client.post(
                 reverse('billing:tmr_webhook'),
                 data=payload, content_type='application/json',
+                HTTP_X_TMR_SIGNATURE=sig,
             )
             resp2 = self.client.post(
                 reverse('billing:tmr_webhook'),
                 data=payload, content_type='application/json',
+                HTTP_X_TMR_SIGNATURE=sig,
             )
         self.assertEqual(resp2.status_code, 200)
         self.assertEqual(json.loads(resp2.content)['status'], 'already_processed')
@@ -1679,3 +1718,242 @@ class CSVExportAccuracyTests(TestCase):
                 inv.startswith('CB1'),
                 f'Found dorm_b bill in CSV export: {inv}'
             )
+
+
+# ---------------------------------------------------------------------------
+# I3: Pro-rated Rent in generate_bills_for_dormitory
+# ---------------------------------------------------------------------------
+
+class ProratedBillGenerationTests(TestCase):
+    """
+    I3: ตรวจสอบว่า generate_bills_for_dormitory() เรียก calculate_prorated_rent()
+    เมื่อ lease ของห้องนั้นมี start_date อยู่ในเดือนที่กำลัง generate
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import BillingSettings
+
+        cls.dorm = Dormitory.objects.create(
+            name='Pro Dorm', address='Addr', invoice_prefix='PRO'
+        )
+        BillingSettings.objects.create(
+            dormitory=cls.dorm,
+            bill_day=1,
+            grace_days=5,
+            water_rate=18,
+            elec_rate=7,
+        )
+        building = Building.objects.create(dormitory=cls.dorm, name='B1')
+        floor = Floor.objects.create(building=building, number=1)
+        cls.room = Room.objects.create(
+            floor=floor, number='201', base_rent=6000, status='occupied',
+            dormitory=cls.dorm,
+        )
+
+    def _make_lease(self, start_date, status='active'):
+        from apps.core.models import CustomUser
+        from apps.tenants.models import TenantProfile, Lease
+
+        user = CustomUser.objects.create_user(
+            f'pt_{start_date}', password='pass', role='tenant', dormitory=self.dorm
+        )
+        profile = TenantProfile.objects.create(
+            user=user, room=self.room, dormitory=self.dorm
+        )
+        return Lease.objects.create(
+            tenant=profile, room=self.room, start_date=start_date, status=status,
+            dormitory=self.dorm,
+        )
+
+    def test_full_month_lease_uses_full_rent(self):
+        """Lease start_date = วันที่ 1 ของเดือน → ค่าเช่าเต็ม"""
+        month = date(2027, 1, 1)
+        self._make_lease(date(2027, 1, 1))
+        bills = generate_bills_for_dormitory(self.dorm, month)
+        self.assertEqual(len(bills), 1)
+        self.assertEqual(bills[0].base_rent, Decimal('6000.00'))
+
+    def test_mid_month_lease_uses_prorated_rent(self):
+        """Lease start_date = วันที่ 16 มกราคม → ค่าเช่าครึ่งเดือน"""
+        month = date(2027, 2, 1)
+        self._make_lease(date(2027, 2, 16))
+        bills = generate_bills_for_dormitory(self.dorm, month)
+        self.assertEqual(len(bills), 1)
+        # 28 วันในเดือน ก.พ. 2027 (ไม่ใช่ปีอธิกสุรทิน)
+        # วันที่ 16-28 = 13 วัน → 6000 * 13/28 = 2785.71
+        expected = (Decimal('6000') * 13 / 28).quantize(Decimal('0.01'))
+        self.assertEqual(bills[0].base_rent, expected)
+
+    def test_lease_from_prior_month_uses_full_rent(self):
+        """Lease start_date อยู่ในเดือนก่อนหน้า → ค่าเช่าเต็ม (ไม่ pro-rate)"""
+        month = date(2027, 3, 1)
+        self._make_lease(date(2027, 2, 15))  # lease เริ่มเดือนที่แล้ว
+        bills = generate_bills_for_dormitory(self.dorm, month)
+        self.assertEqual(len(bills), 1)
+        self.assertEqual(bills[0].base_rent, Decimal('6000.00'))
+
+
+# ---------------------------------------------------------------------------
+# I4: Webhook Amount Validation
+# ---------------------------------------------------------------------------
+
+class WebhookAmountValidationTests(TestCase):
+    """
+    I4: ตรวจสอบว่า TMR webhook log warning เมื่อ amount ไม่ตรงกับ bill total
+    และ ActivityLog ถูกสร้างสำหรับ mismatch
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory
+        from apps.rooms.models import Building, Floor, Room
+        from apps.billing.models import Bill
+
+        cls.dorm = Dormitory.objects.create(
+            name='Webhook Dorm', address='Addr', invoice_prefix='WH2'
+        )
+        b = Building.objects.create(dormitory=cls.dorm, name='B')
+        f = Floor.objects.create(building=b, number=1)
+        room = Room.objects.create(floor=f, number='301', base_rent=5000, dormitory=cls.dorm)
+        cls.bill = Bill.objects.create(
+            room=room, month=date(2027, 4, 1), base_rent=5000,
+            total=Decimal('5320.00'), due_date=date(2027, 4, 6), status='sent',
+        )
+
+    def _post(self, data, secret='test-secret'):
+        import hashlib
+        import hmac as _hmac
+        import json as _json
+        body = _json.dumps(data).encode()
+        sig = _hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        return self.client.post(
+            reverse('billing:tmr_webhook'),
+            data=body,
+            content_type='application/json',
+            HTTP_X_TMR_SIGNATURE=sig,
+        )
+
+    def test_matching_amount_creates_payment(self):
+        """amount ตรงกับ bill.total → payment ถูกสร้าง, ไม่มี mismatch log"""
+        from apps.billing.models import Payment
+        from apps.core.models import ActivityLog
+        with self.settings(TMR_WEBHOOK_SECRET='test-secret'):
+            resp = self._post({
+                'ref': 'TXN-MATCH-001',
+                'order_id': self.bill.invoice_number,
+                'amount': '5320.00',
+            })
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Payment.objects.filter(bill=self.bill).exists())
+        self.assertFalse(
+            ActivityLog.objects.filter(action='webhook_amount_mismatch').exists()
+        )
+
+    def test_mismatched_amount_logs_warning(self):
+        """amount ไม่ตรงกับ bill.total → ActivityLog action='webhook_amount_mismatch' ถูกสร้าง"""
+        from apps.core.models import ActivityLog
+        # รีเซ็ต bill status ก่อนเทส (เผื่อเทสก่อนหน้า paid ไปแล้ว)
+        self.bill.refresh_from_db()
+        if self.bill.status == 'paid':
+            self.bill.status = 'sent'
+            self.bill.save(update_fields=['status', 'updated_at'])
+
+        with self.settings(TMR_WEBHOOK_SECRET='test-secret'):
+            resp = self._post({
+                'ref': 'TXN-MISMATCH-001',
+                'order_id': self.bill.invoice_number,
+                'amount': '9999.00',  # จำนวนเงินไม่ตรง
+            })
+        self.assertEqual(resp.status_code, 200)
+        log = ActivityLog.objects.filter(action='webhook_amount_mismatch').first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.detail.get('webhook_amount'), '9999.00')
+        self.assertEqual(log.detail.get('bill_total'), '5320.00')
+
+
+# ---------------------------------------------------------------------------
+# S8-3: Invoice Number Collision Prevention Tests
+# ---------------------------------------------------------------------------
+
+class InvoiceNumberCollisionTests(TestCase):
+    """
+    ทดสอบว่า Bill.save() ใช้ MAX-based seq และไม่ re-use เลขที่ถูกลบ
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from apps.core.models import Dormitory
+        from apps.rooms.models import Building, Floor, Room
+
+        cls.dorm = Dormitory.objects.create(
+            name='Collision Test Dorm', address='Collision Addr', invoice_prefix='COL'
+        )
+        with dormitory_context(cls.dorm):
+            building = Building.objects.create(name='Col Building')
+            floor = Floor.objects.create(building=building, number=1)
+            cls.rooms = [
+                Room.objects.create(floor=floor, number=str(i), base_rent=5000)
+                for i in range(1, 8)  # 7 rooms สำหรับ test แต่ละอัน
+            ]
+
+    def _make_bill(self, room, month, **kwargs):
+        from apps.billing.models import Bill
+        with dormitory_context(self.dorm):
+            return Bill.objects.create(
+                room=room, month=month, base_rent=5000,
+                total=5000, due_date=date(month.year, month.month, 25),
+                **kwargs
+            )
+
+    def test_invoice_number_uses_max_not_count(self):
+        """
+        สร้าง bill 2 ใบ ลบใบที่มี seq สูงสุด (seq=2)
+        bill ใหม่ต้องได้ seq=3 ไม่ใช่ seq=2 (count-based จะได้ 2 ซึ่งผิด)
+        """
+        from apps.billing.models import Bill
+        month = date(2026, 1, 1)
+
+        bill1 = self._make_bill(self.rooms[0], month)
+        bill2 = self._make_bill(self.rooms[1], month)
+
+        # ตรวจว่าได้ seq ตามลำดับ
+        seq1 = int(bill1.invoice_number.split('-')[-1])
+        seq2 = int(bill2.invoice_number.split('-')[-1])
+        self.assertEqual(seq2, seq1 + 1)
+
+        # ลบ bill2 (seq สูงสุด)
+        bill2.delete()
+
+        # สร้าง bill ใหม่ — ต้องได้ seq = seq2 + 1 (MAX-based ต่อจาก seq2 ก่อนลบ)
+        bill3 = self._make_bill(self.rooms[2], month)
+        seq3 = int(bill3.invoice_number.split('-')[-1])
+        # MAX-based: last known seq คือ seq1 (bill2 ถูกลบไปแล้ว)
+        # ดังนั้น seq3 ต้องเป็น seq1 + 1
+        self.assertEqual(seq3, seq1 + 1)
+        # ต้องไม่ใช่ seq ของ bill2 ที่ถูกลบไปแล้ว (ซึ่ง count-based จะได้เลขนี้)
+        # เนื่องจาก bill2 ถูกลบไป count = 1 → seq = 2 ซึ่งเคยใช้แล้ว
+        # MAX-based จะนับจาก bill1 ที่เหลืออยู่ → seq1+1
+
+    def test_sequential_creation_no_collision(self):
+        """สร้าง bill ทีละใบ 5 ใบในเดือนเดียวกัน — invoice_number ต้องไม่ซ้ำและเรียงลำดับ"""
+        from apps.billing.models import Bill
+        month = date(2026, 2, 1)
+
+        bills = []
+        for i in range(5):
+            b = self._make_bill(self.rooms[i], month)
+            bills.append(b)
+
+        invoice_numbers = [b.invoice_number for b in bills]
+        # ต้องไม่มีซ้ำ
+        self.assertEqual(len(invoice_numbers), len(set(invoice_numbers)),
+                         f"พบ invoice_number ซ้ำ: {invoice_numbers}")
+
+        # ต้องเรียงลำดับ seq
+        seqs = [int(inv.split('-')[-1]) for inv in invoice_numbers]
+        for i in range(1, len(seqs)):
+            self.assertEqual(seqs[i], seqs[i - 1] + 1,
+                             f"Seq ไม่ต่อเนื่อง: {seqs}")

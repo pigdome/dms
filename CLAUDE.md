@@ -26,6 +26,39 @@
 
 ---
 
+## AI Agent Architecture
+
+**Claude** = Orchestrator (reasoning, coding, decision making)
+**Gemini** = Context Synthesizer (file discovery, large-scale reading)
+
+### เมื่อไหร่ให้เรียก Gemini
+✅ ควรเรียก:
+- ต้องค้นหาว่า topic/keyword อยู่ในไฟล์ไหน และต้องค้นหาหลายไฟล์
+- ต้องอ่าน markdown/text files จำนวนมากพร้อมกัน
+- ต้องทำ cross-file analysis หรือ summarize ก่อนที่ Claude จะอ่านจริง
+
+❌ ไม่ต้องเรียก:
+- ไฟล์น้อย หรือรู้ path อยู่แล้ว (อ่านเองเร็วกว่า)
+- งานต้องการ reasoning หรือ coding จริงจัง
+- task ง่ายหรือ context ชัดเจนอยู่แล้ว
+
+### วิธีเรียก Gemini
+```bash
+gemini -p "YOUR_PROMPT_HERE"
+# หรือผ่าน script กลาง
+bash scripts/ask-gemini.sh "YOUR_PROMPT_HERE"
+```
+
+### Workflow มาตรฐาน
+1. เรียก Gemini → "ใน folder นี้ มีไฟล์ไหนที่เกี่ยวกับ [topic] บ้าง?"
+2. รับรายชื่อไฟล์กลับมา
+3. **Verify** ว่าไฟล์นั้นมีอยู่จริง (Glob หรือ Read) ก่อนใช้เสมอ
+4. Claude อ่านเฉพาะไฟล์ที่จำเป็น
+
+> Gemini output ใช้เป็น **reference เท่านั้น** — ไม่ใช่ source of truth
+
+---
+
 ## User Roles
 | Role | คำอธิบาย |
 |---|---|

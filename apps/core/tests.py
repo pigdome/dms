@@ -1428,12 +1428,15 @@ class AuditTrailCompletenessTests(TestCase):
             'order_id': 'AT1-2503-001',
             'amount': '5000.00',
         }).encode()
+        secret = 'test-webhook-secret'
+        sig = _hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
-        with self.settings(TMR_WEBHOOK_SECRET=''):
+        with self.settings(TMR_WEBHOOK_SECRET=secret):
             resp = self.client.post(
                 '/billing/webhook/tmr/',
                 data=body,
                 content_type='application/json',
+                HTTP_X_TMR_SIGNATURE=sig,
             )
         self.assertEqual(resp.status_code, 200)
 
@@ -1467,3 +1470,29 @@ class AuditTrailCompletenessTests(TestCase):
         self.client.force_login(self.staff_a)
         resp = self.client.get('/audit-log/')
         self.assertEqual(resp.status_code, 403)
+
+
+# ---------------------------------------------------------------------------
+# S8-1: Custom 404/500 Error Page Tests
+# ---------------------------------------------------------------------------
+
+class CustomErrorPageTests(TestCase):
+    """ทดสอบว่า custom 404/500 templates ถูก render ถูกต้อง"""
+
+    def test_404_page_returns_correct_status(self):
+        """GET /this-url-does-not-exist-xyz/ ต้อง return 404 status code"""
+        # ใช้ raise_request_exception=False เพื่อให้ได้ 404 response จริง ไม่ใช่ exception
+        client = self.client_class(raise_request_exception=False)
+        resp = client.get('/this-url-does-not-exist-xyz/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_404_uses_custom_template(self):
+        """response body ต้องมีข้อความจาก custom template ไม่ใช่ Django default"""
+        client = self.client_class(raise_request_exception=False)
+        resp = client.get('/this-url-does-not-exist-xyz/')
+        self.assertEqual(resp.status_code, 404)
+        # templates/404.html มีข้อความ "ไม่พบหน้าที่ต้องการ"
+        content = resp.content.decode('utf-8')
+        self.assertIn('ไม่พบหน้าที่ต้องการ', content)
+        # ต้องไม่ใช่ Django default page
+        self.assertNotIn('Django tried these URL patterns', content)

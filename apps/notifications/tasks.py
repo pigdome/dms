@@ -266,8 +266,8 @@ def send_broadcast_task(self, broadcast_pk: int):
 # P1-1: Lease Expiry Warning — Celery scheduled task
 # ---------------------------------------------------------------------------
 
-@shared_task
-def check_lease_expiry_task():
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def check_lease_expiry_task(self):
     """
     Daily check for leases expiring in 30 or 7 days.
     Sends LINE notifications to both tenant and owner(s).
@@ -280,106 +280,110 @@ def check_lease_expiry_task():
     from apps.tenants.models import Lease
     from apps.core.models import ActivityLog, CustomUser, UserDormitoryRole
 
-    today = timezone.now().date()
-    warning_days = [30, 7]
+    try:
+        today = timezone.now().date()
+        warning_days = [30, 7]
 
-    for days in warning_days:
-        target_date = today + timedelta(days=days)
-        # Find active leases expiring on exactly target_date
-        leases = Lease.unscoped_objects.filter(
-            status='active',
-            end_date=target_date,
-        ).select_related(
-            'tenant__user',
-            'room__floor__building__dormitory',
-        )
+        for days in warning_days:
+            target_date = today + timedelta(days=days)
+            # Find active leases expiring on exactly target_date
+            leases = Lease.unscoped_objects.filter(
+                status='active',
+                end_date=target_date,
+            ).select_related(
+                'tenant__user',
+                'room__floor__building__dormitory',
+            )
 
-        for lease in leases:
-            if not lease.room or not lease.tenant:
-                continue
+            for lease in leases:
+                if not lease.room or not lease.tenant:
+                    continue
 
-            dormitory = lease.room.floor.building.dormitory if lease.room else None
-            if not dormitory:
-                continue
+                dormitory = lease.room.floor.building.dormitory if lease.room else None
+                if not dormitory:
+                    continue
 
-            # Idempotency: check if we already sent this exact warning
-            log_action = f'lease_expiry_{days}d'
-            already_sent = ActivityLog.unscoped_objects.filter(
-                action=log_action,
-                record_id=str(lease.pk),
-            ).exists()
-            if already_sent:
-                continue
+                # Idempotency: check if we already sent this exact warning
+                log_action = f'lease_expiry_{days}d'
+                already_sent = ActivityLog.unscoped_objects.filter(
+                    action=log_action,
+                    record_id=str(lease.pk),
+                ).exists()
+                if already_sent:
+                    continue
 
-            tenant_sent = False
-            owner_sent = False
+                tenant_sent = False
+                owner_sent = False
 
-            # Send to tenant
-            try:
-                from apps.notifications.line import push_lease_expiry_tenant
-                tenant_sent = push_lease_expiry_tenant(lease.tenant, lease, days)
-            except Exception as exc:
-                logger.warning(
-                    'Lease expiry tenant notification failed lease=%s: %s',
-                    lease.pk, exc,
-                )
+                # Send to tenant
+                try:
+                    from apps.notifications.line import push_lease_expiry_tenant
+                    tenant_sent = push_lease_expiry_tenant(lease.tenant, lease, days)
+                except Exception as exc:
+                    logger.warning(
+                        'Lease expiry tenant notification failed lease=%s: %s',
+                        lease.pk, exc,
+                    )
 
-            # Send to owner(s) of this dormitory
-            try:
-                from apps.notifications.line import push_lease_expiry_owner
-                # Find owners: first check direct dormitory FK, then UserDormitoryRole
-                owners = CustomUser.objects.filter(
-                    dormitory=dormitory,
-                    role=CustomUser.Role.OWNER,
-                ).exclude(line_user_id='')
-
-                if not owners.exists():
-                    owner_ids = UserDormitoryRole.objects.filter(
+                # Send to owner(s) of this dormitory
+                try:
+                    from apps.notifications.line import push_lease_expiry_owner
+                    # Find owners: first check direct dormitory FK, then UserDormitoryRole
+                    owners = CustomUser.objects.filter(
                         dormitory=dormitory,
                         role=CustomUser.Role.OWNER,
-                    ).values_list('user_id', flat=True)
-                    owners = CustomUser.objects.filter(
-                        pk__in=owner_ids,
                     ).exclude(line_user_id='')
 
-                for owner in owners:
-                    if push_lease_expiry_owner(owner, lease, days):
-                        owner_sent = True
-            except Exception as exc:
-                logger.warning(
-                    'Lease expiry owner notification failed lease=%s: %s',
-                    lease.pk, exc,
+                    if not owners.exists():
+                        owner_ids = UserDormitoryRole.objects.filter(
+                            dormitory=dormitory,
+                            role=CustomUser.Role.OWNER,
+                        ).values_list('user_id', flat=True)
+                        owners = CustomUser.objects.filter(
+                            pk__in=owner_ids,
+                        ).exclude(line_user_id='')
+
+                    for owner in owners:
+                        if push_lease_expiry_owner(owner, lease, days):
+                            owner_sent = True
+                except Exception as exc:
+                    logger.warning(
+                        'Lease expiry owner notification failed lease=%s: %s',
+                        lease.pk, exc,
+                    )
+
+                # Log to prevent duplicate notifications
+                ActivityLog.unscoped_objects.create(
+                    dormitory=dormitory,
+                    action=log_action,
+                    record_id=str(lease.pk),
+                    detail={
+                        'model': 'Lease',
+                        'lease_id': str(lease.pk),
+                        'days_remaining': days,
+                        'tenant_notified': tenant_sent,
+                        'owner_notified': owner_sent,
+                    },
                 )
 
-            # Log to prevent duplicate notifications
-            ActivityLog.unscoped_objects.create(
-                dormitory=dormitory,
-                action=log_action,
-                record_id=str(lease.pk),
-                detail={
-                    'model': 'Lease',
-                    'lease_id': str(lease.pk),
-                    'days_remaining': days,
-                    'tenant_notified': tenant_sent,
-                    'owner_notified': owner_sent,
-                },
-            )
-
-            logger.info(
-                'Lease expiry warning (%dd) sent for lease %s room %s: '
-                'tenant=%s owner=%s',
-                days, lease.pk,
-                lease.room.number if lease.room else '?',
-                tenant_sent, owner_sent,
-            )
+                logger.info(
+                    'Lease expiry warning (%dd) sent for lease %s room %s: '
+                    'tenant=%s owner=%s',
+                    days, lease.pk,
+                    lease.room.number if lease.room else '?',
+                    tenant_sent, owner_sent,
+                )
+    except Exception as exc:
+        logger.error('check_lease_expiry_task failed: %s', exc)
+        raise self.retry(exc=exc)
 
 
 # ---------------------------------------------------------------------------
 # P1-2: PDPA Auto-Purge — anonymize tenant data 90 days after lease ends
 # ---------------------------------------------------------------------------
 
-@shared_task
-def pdpa_auto_purge_task():
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def pdpa_auto_purge_task(self):
     """
     Daily task: find tenants whose ALL leases have ended and the most recent
     end_date is more than 90 days ago. Auto-anonymize their personal data
@@ -393,41 +397,45 @@ def pdpa_auto_purge_task():
     from django.db.models import Max, Q
     from apps.tenants.models import TenantProfile
 
-    cutoff_date = timezone.now().date() - timedelta(days=90)
+    try:
+        cutoff_date = timezone.now().date() - timedelta(days=90)
 
-    # Find profiles that:
-    # 1. Are NOT already anonymized
-    # 2. Have NO active/pending leases
-    # 3. Have at least one ended lease with max(end_date) <= cutoff_date
-    candidates = TenantProfile.unscoped_objects.filter(
-        is_deleted=False,
-        anonymized_at__isnull=True,
-    ).exclude(
-        # Exclude profiles with any active or pending lease
-        leases__status__in=['active', 'pending'],
-    ).filter(
-        # Must have at least one ended lease
-        leases__status='ended',
-    ).annotate(
-        latest_end_date=Max('leases__end_date'),
-    ).filter(
-        latest_end_date__lte=cutoff_date,
-    ).distinct()
+        # Find profiles that:
+        # 1. Are NOT already anonymized
+        # 2. Have NO active/pending leases
+        # 3. Have at least one ended lease with max(end_date) <= cutoff_date
+        candidates = TenantProfile.unscoped_objects.filter(
+            is_deleted=False,
+            anonymized_at__isnull=True,
+        ).exclude(
+            # Exclude profiles with any active or pending lease
+            leases__status__in=['active', 'pending'],
+        ).filter(
+            # Must have at least one ended lease
+            leases__status='ended',
+        ).annotate(
+            latest_end_date=Max('leases__end_date'),
+        ).filter(
+            latest_end_date__lte=cutoff_date,
+        ).distinct()
 
-    purged_count = 0
-    for profile in candidates:
-        try:
-            profile.anonymize()
-            purged_count += 1
-            logger.info(
-                'PDPA auto-purge: anonymized TenantProfile %s (latest lease end: %s)',
-                profile.pk, profile.leases.aggregate(Max('end_date'))['end_date__max'],
-            )
-        except Exception as exc:
-            logger.error(
-                'PDPA auto-purge failed for TenantProfile %s: %s',
-                profile.pk, exc,
-            )
+        purged_count = 0
+        for profile in candidates:
+            try:
+                profile.anonymize()
+                purged_count += 1
+                logger.info(
+                    'PDPA auto-purge: anonymized TenantProfile %s (latest lease end: %s)',
+                    profile.pk, profile.leases.aggregate(Max('end_date'))['end_date__max'],
+                )
+            except Exception as exc:
+                logger.error(
+                    'PDPA auto-purge failed for TenantProfile %s: %s',
+                    profile.pk, exc,
+                )
 
-    logger.info('PDPA auto-purge completed: %d profiles anonymized', purged_count)
-    return purged_count
+        logger.info('PDPA auto-purge completed: %d profiles anonymized', purged_count)
+        return purged_count
+    except Exception as exc:
+        logger.error('pdpa_auto_purge_task failed: %s', exc)
+        raise self.retry(exc=exc)

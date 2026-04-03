@@ -39,7 +39,7 @@ class Room(AuditMixin, TenantModelMixin):
     floor = models.ForeignKey(Floor, on_delete=models.CASCADE, related_name='rooms')
     number = models.CharField(max_length=20)
     base_rent = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.VACANT)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.VACANT, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

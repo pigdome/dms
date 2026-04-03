@@ -4,9 +4,15 @@ from django.shortcuts import render, redirect
 from django.views import View
 from django.db.models import Sum, Count, Q
 from django.utils import timezone
+from django.core.cache import cache
 from dateutil.relativedelta import relativedelta
 
 from apps.core.mixins import OwnerRequiredMixin, StaffRequiredMixin
+
+
+def _dashboard_cache_key(dormitory_id):
+    """Cache key สำหรับ dashboard stats แยกตาม dormitory (tenant isolation)"""
+    return f'dashboard:stats:{dormitory_id}'
 
 
 class DashboardView(StaffRequiredMixin, View):
@@ -34,55 +40,72 @@ class DashboardView(StaffRequiredMixin, View):
 
             rooms_qs = Room.objects.filter(floor__building__dormitory=dorm)
 
-            # Total income this month (paid bills)
-            total_income = Bill.objects.filter(
-                room__in=rooms_qs,
-                status='paid',
-                month__year=now.year,
-                month__month=now.month,
-            ).aggregate(total=Sum('total'))['total'] or 0
+            # S8-4: ดึง stats จาก cache ก่อน — TTL 5 นาที, key แยกตาม dormitory
+            cache_key = _dashboard_cache_key(dorm.pk)
+            stats = cache.get(cache_key)
 
-            # Total income last month (for trend)
-            last_month_income = Bill.objects.filter(
-                room__in=rooms_qs,
-                status='paid',
-                month__year=last_month.year,
-                month__month=last_month.month,
-            ).aggregate(total=Sum('total'))['total'] or 0
+            if stats is None:
+                # Cache miss — run queries และเก็บผลลัพธ์ลง cache
+                # รวม Bill stats เป็น query เดียวด้วย conditional aggregation (N5)
+                bill_stats = Bill.objects.filter(
+                    room__floor__building__dormitory=dorm,
+                ).aggregate(
+                    total_income=Sum('total', filter=Q(
+                        status='paid',
+                        month__year=now.year,
+                        month__month=now.month,
+                    )),
+                    last_month_income=Sum('total', filter=Q(
+                        status='paid',
+                        month__year=last_month.year,
+                        month__month=last_month.month,
+                    )),
+                    overdue_amount=Sum('total', filter=Q(status='overdue')),
+                )
+                total_income = bill_stats['total_income'] or 0
+                last_month_income = bill_stats['last_month_income'] or 0
+                overdue_amount = bill_stats['overdue_amount'] or 0
 
-            # Income trend: positive = up, negative = down, None = no data
-            if last_month_income > 0:
-                income_trend = round((total_income - last_month_income) / last_month_income * 100, 1)
-            else:
-                income_trend = None
+                # Income trend: positive = up, negative = down, None = no data
+                if last_month_income > 0:
+                    income_trend = round((total_income - last_month_income) / last_month_income * 100, 1)
+                else:
+                    income_trend = None
 
-            # Overdue bills: count + total amount
-            overdue_bills = Bill.objects.filter(room__in=rooms_qs, status='overdue')
-            overdue_count = overdue_bills.values('room').distinct().count()
-            overdue_amount = overdue_bills.aggregate(total=Sum('total'))['total'] or 0
+                # Overdue room count (distinct rooms)
+                overdue_count = Bill.objects.filter(
+                    room__floor__building__dormitory=dorm,
+                    status='overdue',
+                ).values('room').distinct().count()
 
-            # Vacant rooms
-            vacant_count = rooms_qs.filter(status='vacant').count()
+                # Vacant rooms
+                vacant_count = rooms_qs.filter(status='vacant').count()
 
-            # Pending maintenance tickets
-            pending_maintenance = MaintenanceTicket.objects.filter(
-                room__in=rooms_qs,
-                status__in=['new', 'in_progress', 'waiting_parts'],
-            ).count()
+                # Pending maintenance tickets
+                pending_maintenance = MaintenanceTicket.objects.filter(
+                    room__in=rooms_qs,
+                    status__in=['new', 'in_progress', 'waiting_parts'],
+                ).count()
 
-            # Recent activity logs
-            recent_activity = ActivityLog.objects.filter(dormitory=dorm)[:10]
+                stats = {
+                    'total_income': total_income,
+                    'last_month_income': last_month_income,
+                    'income_trend': income_trend,
+                    'overdue_count': overdue_count,
+                    'overdue_amount': overdue_amount,
+                    'vacant_count': vacant_count,
+                    'pending_maintenance': pending_maintenance,
+                }
+                # บันทึกลง cache 5 นาที (300 วินาที)
+                cache.set(cache_key, stats, timeout=300)
 
-            context.update({
-                'total_income': total_income,
-                'last_month_income': last_month_income,
-                'income_trend': income_trend,
-                'overdue_count': overdue_count,
-                'overdue_amount': overdue_amount,
-                'vacant_count': vacant_count,
-                'pending_maintenance': pending_maintenance,
-                'recent_activity': recent_activity,
-            })
+            # Recent activity logs ไม่ cache — ต้องแสดง realtime
+            recent_activity = ActivityLog.objects.filter(
+                dormitory=dorm,
+            ).select_related('user')[:10]
+
+            context.update(stats)
+            context['recent_activity'] = recent_activity
 
         return render(request, 'dashboard/index.html', context)
 

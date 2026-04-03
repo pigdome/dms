@@ -173,6 +173,19 @@ class Command(BaseCommand):
         staff_user  = _user('staff1', 'staff1@test.com', 'test1234',
                             CustomUser.Role.STAFF, 'สมหมาย', 'พนักงาน', dorm=dormitory)
 
+        # StaffPermission: ให้ staff1 เข้าถึงทุก feature (สำหรับ dev/demo)
+        from apps.core.models import StaffPermission
+        StaffPermission.objects.get_or_create(
+            user=staff_user, dormitory=dormitory,
+            defaults={
+                'can_view_billing': True,
+                'can_record_meter': True,
+                'can_manage_maintenance': True,
+                'can_log_parcels': True,
+                'can_view_tenants': True,
+            },
+        )
+
         # Register owner in UserDormitoryRole (required for property_switch)
         UserDormitoryRole.objects.get_or_create(
             user=owner_user, dormitory=dormitory,

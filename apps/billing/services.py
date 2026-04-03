@@ -66,6 +66,8 @@ def generate_bills_for_dormitory(dormitory, month: date) -> list:
     bill_date = date(month.year, month.month, settings.bill_day)
     due_date = bill_date + timedelta(days=settings.grace_days)
 
+    from apps.tenants.models import Lease
+
     rooms = Room.objects.filter(
         floor__building__dormitory=dormitory,
         status=Room.Status.OCCUPIED,
@@ -89,13 +91,28 @@ def generate_bills_for_dormitory(dormitory, month: date) -> list:
             water_amt = Decimal(str(meter.water_units)) * settings.water_rate
             elec_amt = Decimal(str(meter.elec_units)) * settings.elec_rate
 
-        total = room.base_rent + water_amt + elec_amt
+        # I3: ตรวจสอบว่า lease ของห้องนี้เริ่มต้นในเดือนที่กำลัง generate bill
+        # ถ้า start_date อยู่ในเดือนเดียวกัน → คำนวณ pro-rated rent แทนราคาเต็ม
+        base_rent = room.base_rent
+        active_lease = (
+            Lease.unscoped_objects
+            .filter(room=room, status='active')
+            .order_by('-start_date')
+            .first()
+        )
+        if active_lease and active_lease.start_date:
+            lease_start = active_lease.start_date
+            if lease_start.year == month.year and lease_start.month == month.month:
+                # ผู้เช่าเข้าอยู่กลางเดือน → คำนวณค่าเช่าตามจำนวนวันที่พักจริง
+                base_rent = calculate_prorated_rent(room.base_rent, lease_start, month)
+
+        total = base_rent + water_amt + elec_amt
 
         with transaction.atomic():
             bill = Bill.objects.create(
                 room=room,
                 month=month,
-                base_rent=room.base_rent,
+                base_rent=base_rent,
                 meter_reading=meter,
                 water_amt=water_amt,
                 elec_amt=elec_amt,

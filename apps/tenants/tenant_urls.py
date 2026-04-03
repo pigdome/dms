@@ -1,7 +1,7 @@
 from django.urls import path
 
 from apps.maintenance.views import TenantTicketCreateView
-from apps.tenants.views import TenantHomeView, TenantBillsView, TenantBillDetailView, TenantParcelsView, TenantProfileView
+from apps.tenants.views import TenantHomeView, TenantBillsView, TenantBillDetailView, TenantParcelsView, TenantProfileView, TenantChangePasswordView
 
 app_name = 'tenant'
 
@@ -12,4 +12,5 @@ urlpatterns = [
     path('parcels/', TenantParcelsView.as_view(), name='parcels'),
     path('profile/', TenantProfileView.as_view(), name='profile'),
     path('maintenance/', TenantTicketCreateView.as_view(), name='maintenance'),
+    path('change-password/', TenantChangePasswordView.as_view(), name='change_password'),
 ]
